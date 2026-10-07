@@ -3,9 +3,9 @@ import json
 from pathlib import Path
 import tempfile
 from PyQt6.QtCore import QObject,QRunnable,QThreadPool,pyqtSignal
-from PyQt6.QtWidgets import QDialog,QVBoxLayout,QLabel,QComboBox,QPushButton,QHBoxLayout
+from PyQt6.QtWidgets import QDialog,QVBoxLayout,QLabel,QComboBox,QPushButton,QHBoxLayout,QCheckBox
 from playlite.play_actions import actions_for
-from .installer import detect,package,fetch,payload,Installation,overrides
+from .installer import detect,package,fetch,payload,Installation,overrides,configuration_manager_package
 
 
 class Signals(QObject):
@@ -41,6 +41,8 @@ class InstallDialog(QDialog):
             except (ValueError,OSError):continue
             self.source.addItem(f'{item["Name"]} — {architecture}',item)
         layout.addWidget(self.source)
+        self.configuration_manager=QCheckBox('Include Configuration Manager (in-game settings, F1)')
+        self.configuration_manager.setChecked(True);layout.addWidget(self.configuration_manager)
         self.status=QLabel('Choose the source Lutris entry.');self.status.setWordWrap(True);layout.addWidget(self.status)
         footer=QHBoxLayout();footer.addStretch()
         self.install_button=QPushButton('Install and add modded launch');self.install_button.clicked.connect(self.start)
@@ -60,6 +62,8 @@ class InstallDialog(QDialog):
         if self.window.game_detection.status(self.game['Id']) in ('Launching','Running') or self.game['Id'] in self.lutris.detect_running([self.game]):
             self.status.setText('Close the game before installing BepInEx.');return
         self.install_button.setEnabled(False);self.close_button.setEnabled(False);self.source.setEnabled(False)
+        include_manager=self.configuration_manager.isChecked()
+        self.configuration_manager.setEnabled(False)
         def operation(progress):
             executable,architecture=detect(source['Executable'])
             configuration=self.lutris.launch_configuration(source['LutrisId'])
@@ -72,6 +76,15 @@ class InstallDialog(QDialog):
             with tempfile.TemporaryDirectory(prefix='playlite-bepinex-') as temporary:
                 path=Path(temporary)/'package.zip';path.write_bytes(archive)
                 files=payload(path)
+            if include_manager:
+                progress('Finding Configuration Manager for BepInEx 5…')
+                manager_url,manager_version,manager_digest=configuration_manager_package()
+                progress('Downloading Configuration Manager '+manager_version+'…')
+                manager_archive=fetch(manager_url)
+                if manager_digest and manager_digest!='sha256:'+hashlib.sha256(manager_archive).hexdigest():raise ValueError('Configuration Manager checksum mismatch.')
+                with tempfile.TemporaryDirectory(prefix='playlite-bepinex-manager-') as temporary:
+                    path=Path(temporary)/'manager.zip';path.write_bytes(manager_archive)
+                    files.update(payload(path,configuration_manager=True))
             install=Installation(executable.parent,files)
             progress('Installing BepInEx beside the game executable…');install.apply()
             try:
@@ -88,6 +101,7 @@ class InstallDialog(QDialog):
         QThreadPool.globalInstance().start(self.job)
 
     def finished_install(self,result,error):
+        self.configuration_manager.setEnabled(True)
         self.job=None;self.close_button.setEnabled(True);self.source.setEnabled(True)
         if error:
             self.status.setText(error);self.install_button.setEnabled(True);return

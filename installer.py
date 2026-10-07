@@ -61,7 +61,7 @@ def package(architecture):
         return f'https://github.com/{REPOSITORY}/releases/download/v{version}/BepInEx_win_{architecture}_{version}.zip',version,None
 
 
-def payload(archive):
+def payload(archive, configuration_manager=False):
     with ZipFile(archive) as bundle:
         entries=bundle.infolist()
         if len(entries)>2000 or sum(item.file_size for item in entries)>200*1024*1024:raise ValueError('BepInEx archive is too large.')
@@ -73,7 +73,8 @@ def payload(archive):
             if key in seen:raise ValueError('Duplicate archive path.')
             seen.add(key)
             if not item.is_dir():files[path.as_posix()]=bundle.read(item)
-        required=('winhttp.dll','doorstop_config.ini','BepInEx/core/BepInEx.Preloader.dll')
+        required=('BepInEx/plugins/ConfigurationManager/ConfigurationManager.dll',) if configuration_manager else ('winhttp.dll','doorstop_config.ini','BepInEx/core/BepInEx.Preloader.dll')
+        if configuration_manager and any(not name.startswith('BepInEx/plugins/ConfigurationManager/') for name in files):raise ValueError('Unexpected Configuration Manager archive contents.')
         if not all(name in files for name in required):raise ValueError('This is not a Windows BepInEx 5 package.')
         return files
 
@@ -113,3 +114,24 @@ def overrides(existing):
         remaining=[name for name in names.split(',') if name.strip().casefold()!='winhttp']
         if remaining:parts.append(','.join(remaining)+'='+value)
     return ';'.join([*parts,'winhttp=n,b'])
+
+
+def configuration_manager_package():
+    repository='BepInEx/BepInEx.ConfigurationManager'
+    try:
+        release=json.loads(fetch(f'https://api.github.com/repos/{repository}/releases/latest'))
+        if release.get('draft') or release.get('prerelease'):raise ValueError('A stable Configuration Manager release is unavailable.')
+        tag=release['tag_name']
+        if not re.fullmatch(r'v[0-9]+(?:\.[0-9]+)*',tag):raise ValueError('Invalid Configuration Manager release version.')
+        name=f'BepInEx.ConfigurationManager_BepInEx5_{tag}.zip'
+        asset=next((item for item in release['assets'] if item['name']==name),None)
+        if asset is None:raise ValueError('The BepInEx 5 Configuration Manager package is unavailable.')
+        return asset['browser_download_url'],tag,asset.get('digest')
+    except HTTPError as error:
+        if error.code not in (403,429):raise
+        with urllib.request.urlopen(f'https://github.com/{repository}/releases/latest',timeout=60) as response:
+            path=urlparse(response.geturl()).path
+        match=re.fullmatch(r'/BepInEx/BepInEx.ConfigurationManager/releases/tag/(v[0-9]+(?:\.[0-9]+)*)',path)
+        if not match:raise ValueError('Could not resolve a stable Configuration Manager release.')
+        tag=match[1]
+        return f'https://github.com/{repository}/releases/download/{tag}/BepInEx.ConfigurationManager_BepInEx5_{tag}.zip',tag,None

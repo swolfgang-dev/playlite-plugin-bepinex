@@ -25,8 +25,8 @@ class DialogTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):cls.app=QApplication.instance() or QApplication([])
     def test_install_creates_modded_action_and_registration_failure_rolls_back(self):
-        for fail in (False,True):
-            with self.subTest(fail=fail),tempfile.TemporaryDirectory() as temporary:
+        for fail,include_manager in ((False,False),(False,True),(True,True)):
+            with self.subTest(fail=fail,include_manager=include_manager),tempfile.TemporaryDirectory() as temporary:
                 root=Path(temporary);exe=root/'game.exe'
                 data=bytearray(128);data[:2]=b'MZ';struct.pack_into('<I',data,60,64);data[64:68]=b'PE\0\0';struct.pack_into('<H',data,68,0x8664);exe.write_bytes(data)
                 managed=root/'game_Data/Managed';managed.mkdir(parents=True);(managed/'Assembly-CSharp.dll').touch()
@@ -41,8 +41,13 @@ class DialogTests(unittest.TestCase):
                 game=dict(Id='existing',Name='Example',PlayActions=[dict(Name='Vanilla',Integration=provider.id,GameId='12')])
                 window.games=[game];window.data=root;window.game_providers=[provider];window.focus_added_game=Mock()
                 dialog=InstallDialog(window,game,provider)
+                self.assertTrue(dialog.configuration_manager.isChecked())
+                dialog.configuration_manager.setChecked(include_manager)
+                manager_archive=io.BytesIO()
+                with ZipFile(manager_archive,'w') as bundle:
+                    bundle.writestr('BepInEx/plugins/ConfigurationManager/ConfigurationManager.dll',b'manager')
                 pool=Mock();pool.start.side_effect=lambda job:job.run()
-                with patch('bepinex_ui_test.dialog.package',return_value=('url','5.4.23.5',None)),patch('bepinex_ui_test.dialog.fetch',return_value=archive.getvalue()),patch('PyQt6.QtCore.QThreadPool.globalInstance',return_value=pool),patch('playlite.providers.discover_plugins',return_value={}):
+                with patch('bepinex_ui_test.dialog.package',return_value=('url','5.4.23.5',None)),patch('bepinex_ui_test.dialog.configuration_manager_package',return_value=('manager-url','v19.0',None)),patch('bepinex_ui_test.dialog.fetch',side_effect=lambda url: manager_archive.getvalue() if url=='manager-url' else archive.getvalue()),patch('PyQt6.QtCore.QThreadPool.globalInstance',return_value=pool),patch('playlite.providers.discover_plugins',return_value={}):
                     dialog.start()
                 if fail:
                     self.assertIn('registration failed',dialog.status.text())
@@ -55,4 +60,5 @@ class DialogTests(unittest.TestCase):
                     self.assertEqual(window.games[0]['PlayActions'][0],game['PlayActions'][0])
                     provider.create_variant.assert_called_once_with('12','Example - Modded','BepInEx',environment={'WINEDLLOVERRIDES':'version=n;winhttp=n,b'},dll_overrides={'winhttp':'n,b'})
                     self.assertTrue((root/'winhttp.dll').exists())
+                    self.assertEqual((root/'BepInEx/plugins/ConfigurationManager/ConfigurationManager.dll').exists(),include_manager)
                 dialog.close();window.close()
