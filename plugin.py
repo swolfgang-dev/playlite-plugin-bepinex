@@ -5,7 +5,7 @@ from playlite.play_actions import actions_for
 
 class Plugin(GenericPlugin):
     def game_actions(self,window,game):
-        folder_actions=[('Open BepInEx plugins folder',lambda:self.open_plugins_folder(window,game))] if game.get('BepInExInstallation') else []
+        folder_actions=[('Open BepInEx plugins folder',lambda:self.open_plugins_folder(window,game))] if self.plugins_folder(game) else []
         lutris=discover_plugins().get('LutrisIntegration')
         if not lutris:return folder_actions
         if not any(action.get('Integration')==lutris.id for action in actions_for(game,[lutris])):return folder_actions
@@ -14,14 +14,27 @@ class Plugin(GenericPlugin):
             actions.append(('Uninstall BepInEx…',lambda:self.uninstall(window,game,lutris)))
         return actions+folder_actions
 
+    @staticmethod
+    def plugins_folder(game):
+        executables=[game.get('BepInExInstallation',{}).get('executable'),game.get('Executable')]
+        executables.extend(action.get('Executable') for action in game.get('PlayActions',[]) or [])
+        for value in executables:
+            if not value:continue
+            executable=Path(value).expanduser()
+            if not executable.is_absolute():continue
+            root=executable.parent
+            folder=root/'BepInEx'/'plugins'
+            installed=(root/'winhttp.dll').is_file() and (root/'BepInEx/core/BepInEx.Preloader.dll').is_file()
+            if folder.is_dir() or installed:return folder
+        return None
+
     def open_plugins_folder(self,window,game):
         from playlite.desktop import open_folder
         from playlite.lifecycle import show_warning
         try:
-            executable=Path(game['BepInExInstallation']['executable']).expanduser()
-            if not executable.is_absolute() or not executable.parent.is_dir():
-                raise ValueError('The game installation folder could not be found.')
-            folder=executable.parent/'BepInEx'/'plugins'
+            folder=self.plugins_folder(game)
+            if folder is None:
+                raise ValueError('BepInEx is not installed and its plugins folder does not exist.')
             folder.mkdir(parents=True,exist_ok=True)
             open_folder(folder)
         except (KeyError,ValueError,OSError) as error:
