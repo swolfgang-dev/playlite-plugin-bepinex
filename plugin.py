@@ -60,6 +60,11 @@ class Plugin(GenericPlugin):
             dialog=QDialog(window);dialog.setWindowTitle('Uninstall BepInEx')
             layout=QVBoxLayout(dialog)
             layout.addWidget(QLabel('Remove BepInEx and its modded launch entry? Game files and the Wine prefix are kept.'))
+            from .steam_setup import steam_apps
+            if steam_apps(game):
+                reminder=QLabel('Steam launch options are not changed automatically. After uninstalling, open Steam → Properties → General → Launch Options and remove the BepInEx WINEDLLOVERRIDES="winhttp=n,b" setting. Preserve your other options and %command%. If you have other DLL overrides in that setting, remove only winhttp=n,b.')
+                reminder.setWordWrap(True)
+                layout.addWidget(reminder)
             keep=QCheckBox('Keep user data (plugins, configuration, and patchers)');keep.setChecked(True)
             layout.addWidget(keep)
             buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
