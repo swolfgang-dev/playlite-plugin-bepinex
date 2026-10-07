@@ -62,6 +62,7 @@ class InstallDialog(QDialog):
         self.steam_setup.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Minimum)
         steam_layout.setContentsMargins(0,0,0,0)
         steam_help=QLabel('For Steam / Proton, after installation open Steam Properties → General → Launch Options and add the winhttp override shown below. If launch options already exist, preserve them and add the override before %command%; do not add a second %command%. This enables BepInEx for all Steam launches of this game.')
+        self.steam_help=steam_help
         steam_help.setWordWrap(True);steam_layout.addWidget(steam_help)
         self.steam_options=QLineEdit(LAUNCH_OPTIONS);self.steam_options.setReadOnly(True);steam_layout.addWidget(self.steam_options)
         self.steam_game=QComboBox()
@@ -80,7 +81,20 @@ class InstallDialog(QDialog):
         self.close_button=QPushButton('Close');self.close_button.clicked.connect(self.reject)
         footer.addWidget(self.install_button);footer.addWidget(self.close_button);layout.addLayout(footer)
         self.update_controls()
+        self.ensurePolished()
+        for control in (self.steam_options,self.copy_steam_button,self.open_steam_button):
+            control.ensurePolished();control.setMinimumHeight(control.sizeHint().height())
+        self.fit_steam_help()
         self.adjustSize()
+
+    def fit_steam_help(self):
+        if hasattr(self,'steam_help'):
+            width=max(200,self.width()-self.layout().contentsMargins().left()-self.layout().contentsMargins().right())
+            self.steam_help.setMinimumHeight(self.steam_help.heightForWidth(width))
+
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        self.fit_steam_help()
 
     def update_controls(self):
         integrated=self.add_lutris.isChecked()
