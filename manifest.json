@@ -1,0 +1,11 @@
+{
+  "id": "BepInExInstaller",
+  "name": "BepInEx Installer",
+  "version": "0.1.0",
+  "api_version": 1,
+  "type": "generic",
+  "enabled": true,
+  "repository": "swolfgang-dev/playlite-plugin-bepinex",
+  "minimum_playlite_version": "0.2.44",
+  "description": "Install stable BepInEx for Windows Unity Mono games and create a separate modded Lutris launch entry."
+}
