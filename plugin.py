@@ -1,18 +1,31 @@
 from pathlib import Path
-from PyQt6.QtWidgets import QMessageBox
 from playlite.providers import GenericPlugin,discover_plugins
 from playlite.play_actions import actions_for
 
 
 class Plugin(GenericPlugin):
     def game_actions(self,window,game):
+        folder_actions=[('Open BepInEx plugins folder',lambda:self.open_plugins_folder(window,game))] if game.get('BepInExInstallation') else []
         lutris=discover_plugins().get('LutrisIntegration')
-        if not lutris:return []
-        if not any(action.get('Integration')==lutris.id for action in actions_for(game,[lutris])):return []
+        if not lutris:return folder_actions
+        if not any(action.get('Integration')==lutris.id for action in actions_for(game,[lutris])):return folder_actions
         actions=[('Install BepInEx and add modded launch…',lambda:self.install(window,game,lutris))]
         if game.get('BepInExInstallation'):
             actions.append(('Uninstall BepInEx…',lambda:self.uninstall(window,game,lutris)))
-        return actions
+        return actions+folder_actions
+
+    def open_plugins_folder(self,window,game):
+        from playlite.desktop import open_folder
+        from playlite.lifecycle import show_warning
+        try:
+            executable=Path(game['BepInExInstallation']['executable']).expanduser()
+            if not executable.is_absolute() or not executable.parent.is_dir():
+                raise ValueError('The game installation folder could not be found.')
+            folder=executable.parent/'BepInEx'/'plugins'
+            folder.mkdir(parents=True,exist_ok=True)
+            open_folder(folder)
+        except (KeyError,ValueError,OSError) as error:
+            show_warning(window,'BepInEx plugins folder',str(error))
 
     def install(self,window,game,lutris):
         from .dialog import InstallDialog

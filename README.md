@@ -17,3 +17,5 @@ Tests: `python3 -m unittest discover -s tests -v`. Package: `python3 tools/build
 Choose **Uninstall BepInEx…** to remove the runtime, its modded Lutris entry, and the matching Playlite action. **Keep user data** is checked by default and preserves plugins, configuration, and patchers. Uncheck it to remove the entire BepInEx directory. Game files and Wine prefixes are retained. Older installations retrieve the original package to verify installed runtime files before removal.
 
 **Include Configuration Manager** is enabled by default. It installs the official BepInEx 5 Mono package under `BepInEx/plugins/ConfigurationManager`, with checksum verification when available. Press F1 in-game to open it. Uncheck the option to install only BepInEx. Keeping user data on uninstall also keeps Configuration Manager.
+
+**Open BepInEx plugins folder** opens the installed game’s `BepInEx/plugins` directory and creates it if missing.
