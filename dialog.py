@@ -98,7 +98,7 @@ class InstallDialog(QDialog):
             updated=copy.deepcopy(latest)
             actions=copy.deepcopy(updated['PlayActions'] or []) if 'PlayActions' in updated else actions_for(updated,self.window.game_providers)
             if not any(action.get('Integration')==self.lutris.id and str(action.get('GameId'))==str(result['id']) for action in actions):
-                actions.append(dict(Name=updated['Name']+' - Modded',Integration=self.lutris.id,GameId=str(result['id']),
+                actions.append(dict(Name='Play '+updated['Name']+' - Modded',Integration=self.lutris.id,GameId=str(result['id']),
                     Executable=result['executable'],Prefix=result['source'].get('Prefix') or '',Arguments='',InstallDirectory=str(Path(result['executable']).parent)))
             updated['PlayActions']=actions
             updated['BepInExInstallation']={key:result[key] for key in ('id','version','sha256','executable')}
@@ -107,4 +107,4 @@ class InstallDialog(QDialog):
         except Exception as error:
             self.status.setText('BepInEx and Lutris entry installed, but the Playlite action could not be saved: '+str(error))
             self.install_button.setEnabled(True);return
-        self.status.setText('Installed BepInEx '+result['version']+'. Select “[Game] - Modded” from the Play dropdown.')
+        self.status.setText('Installed BepInEx '+result['version']+'. Select “Play [Game] - Modded” from the Play dropdown.')

@@ -50,7 +50,7 @@ class DialogTests(unittest.TestCase):
                     self.assertEqual(len(window.games[0]['PlayActions']),1)
                 else:
                     self.assertEqual(len(window.games[0]['PlayActions']),2)
-                    self.assertEqual(window.games[0]['PlayActions'][1]['Name'],'Example - Modded')
+                    self.assertEqual(window.games[0]['PlayActions'][1]['Name'],'Play Example - Modded')
                     self.assertEqual(window.games[0]['PlayActions'][1]['GameId'],'13')
                     self.assertEqual(window.games[0]['PlayActions'][0],game['PlayActions'][0])
                     provider.create_variant.assert_called_once_with('12','Example - Modded','BepInEx',environment={'WINEDLLOVERRIDES':'version=n;winhttp=n,b'},dll_overrides={'winhttp':'n,b'})

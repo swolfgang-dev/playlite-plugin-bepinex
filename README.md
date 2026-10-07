@@ -4,7 +4,7 @@ Installs stable BepInEx 5 for Windows Unity Mono games launched through Lutris. 
 
 Choose **Install BepInEx and add modded launch** in a game's plugin actions. The installer detects x86/x64 from the executable, downloads the matching official stable package, and extracts it beside the executable. Existing differing files, symlinks, and unsafe archives are rejected. Files created by this operation are rolled back if Lutris registration fails.
 
-Creates a separate **[Game] - Modded** Lutris entry and appends a matching Playlite play action. The original entry is not edited. The new entry copies its prefix, runner, arguments, and options, sets the working directory to the executable directory, and enables `winhttp=n,b` in the modded entry. Existing unrelated DLL overrides are preserved. Repeating installation reuses the plugin's variant without creating another entry.
+Creates a separate **[Game] - Modded** Lutris entry and appends a **Play [Game] - Modded** Playlite action. The original entry is not edited. The new entry copies its prefix, runner, arguments, and options, sets the working directory to the executable directory, and enables `winhttp=n,b` in the modded entry. Existing unrelated DLL overrides are preserved. Repeating installation reuses the plugin's variant without creating another entry.
 
 Only stable Unity Mono is supported. IL2CPP, .NET/XNA, and native Linux builds are not offered. No game is launched by the installer. Run the modded entry once to generate BepInEx configuration, then place compatible mods under `BepInEx/plugins`.
 
