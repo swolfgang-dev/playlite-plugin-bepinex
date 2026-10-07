@@ -5,7 +5,7 @@ import tempfile
 from PyQt6.QtCore import QObject,QRunnable,QThreadPool,pyqtSignal
 from PyQt6.QtWidgets import QApplication,QWidget,QDialog,QVBoxLayout,QLabel,QComboBox,QPushButton,QHBoxLayout,QCheckBox,QLineEdit,QLayout,QSizePolicy
 from playlite.play_actions import actions_for
-from .installer import detect,package,fetch,payload,Installation,overrides,configuration_manager_package
+from .installer import detect,package,fetch,payload,Installation,overrides,configuration_manager_package,executable_candidates
 from .steam_setup import LAUNCH_OPTIONS,steam_apps,open_properties
 
 
@@ -51,7 +51,14 @@ class InstallDialog(QDialog):
         executable=game.get('Executable') or game.get('BepInExInstallation',{}).get('executable') or ''
         if not executable:
             executable=next((action.get('Executable') for action in game.get('PlayActions',[]) or [] if action.get('Executable')),'')
+        candidates=executable_candidates(game.get('InstallDirectory')) if not executable else []
+        if len(candidates)==1:executable=candidates[0]
         self.executable=QLineEdit(executable)
+        self.executable_choices=QComboBox()
+        self.executable_choices.addItem('Choose a detected Unity Mono executable…','')
+        for candidate in candidates:self.executable_choices.addItem(candidate,candidate)
+        self.executable_choices.currentIndexChanged.connect(lambda *_:self.executable.setText(self.executable_choices.currentData() or ''))
+        self.executable_choices.setVisible(len(candidates)>1);layout.addWidget(self.executable_choices)
         self.browse_button=QPushButton('Browse executable…');self.browse_button.clicked.connect(self.browse_executable)
         executable_row=QHBoxLayout();executable_row.addWidget(self.executable);executable_row.addWidget(self.browse_button);layout.addLayout(executable_row)
         self.add_lutris.toggled.connect(self.update_controls)
@@ -101,6 +108,7 @@ class InstallDialog(QDialog):
         self.source.setVisible(integrated)
         self.executable.setEnabled(not integrated and self.job is None)
         self.browse_button.setEnabled(not integrated and self.job is None)
+        self.executable_choices.setEnabled(not integrated and self.job is None)
         self.steam_setup.setVisible(not integrated and bool(self.steam_game.count()))
 
     def copy_steam_options(self):
@@ -129,6 +137,7 @@ class InstallDialog(QDialog):
             self.status.setText('Close the game before installing BepInEx.');return
         self.install_button.setEnabled(False);self.close_button.setEnabled(False);self.source.setEnabled(False)
         self.add_lutris.setEnabled(False);self.executable.setEnabled(False);self.browse_button.setEnabled(False)
+        self.executable_choices.setEnabled(False)
         include_manager=self.configuration_manager.isChecked()
         self.configuration_manager.setEnabled(False)
         def operation(progress):

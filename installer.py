@@ -13,6 +13,26 @@ from zipfile import ZipFile
 REPOSITORY='BepInEx/BepInEx'
 
 
+def executable_candidates(directory):
+    """Find supported Mono executables for an already imported game."""
+    import os
+    root=Path(directory).expanduser().resolve() if directory else None
+    if root is None or not root.is_dir():return []
+    result=[]
+    for index,(folder,directories,files) in enumerate(os.walk(root,followlinks=False)):
+        if index>=500:break
+        folder=Path(folder)
+        directories[:]=sorted(name for name in directories if not (folder/name).is_symlink()
+            and name.casefold() not in ('bepinex','redist','_commonredist') and len(folder.relative_to(root).parts)<4)
+        for name in sorted(files):
+            path=folder/name
+            if path.suffix.lower()!='.exe' or path.is_symlink():continue
+            try:executable,_=detect(path)
+            except (ValueError,OSError):continue
+            result.append(str(executable))
+    return sorted(result,key=str.casefold)
+
+
 def detect(executable):
     path=Path(executable).expanduser().resolve(strict=True)
     if not path.is_file() or path.suffix.lower()!='.exe':raise ValueError('Select a Windows game executable.')

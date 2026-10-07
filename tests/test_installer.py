@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 from zipfile import ZipFile
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from installer import detect,payload,Installation,overrides,package
+from installer import detect,payload,Installation,overrides,package,executable_candidates
 
 
 def executable(machine=0x8664):
@@ -15,6 +15,18 @@ def executable(machine=0x8664):
 
 
 class InstallerTests(unittest.TestCase):
+    def test_finds_only_supported_local_mono_executables(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);game=root/'game';game.mkdir()
+            for folder,name in [(game,'First'),(game/'nested','Second'),(root/'outside','External')]:
+                folder.mkdir(parents=True,exist_ok=True);(folder/(name+'.exe')).write_bytes(executable())
+                managed=folder/(name+'_Data')/'Managed';managed.mkdir(parents=True);(managed/'Assembly-CSharp.dll').touch()
+            (game/'external').symlink_to(root/'outside',target_is_directory=True)
+            (game/'launcher.exe').write_bytes(executable())
+            self.assertEqual(executable_candidates(game),[str(game/'First.exe'),str(game/'nested/Second.exe')])
+            (game/'nested/GameAssembly.dll').touch()
+            self.assertEqual(executable_candidates(game),[str(game/'First.exe')])
+
     def test_detects_mono_architecture_and_rejects_il2cpp(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);exe=root/'game.exe';exe.write_bytes(executable())
