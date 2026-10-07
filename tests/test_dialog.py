@@ -25,7 +25,7 @@ class DialogTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):cls.app=QApplication.instance() or QApplication([])
     def test_install_creates_modded_action_and_registration_failure_rolls_back(self):
-        for fail,include_manager in ((False,False),(False,True),(True,True)):
+        for fail,include_manager,integrated in ((False,False,True),(False,True,True),(True,True,True),(False,False,False),(False,True,False)):
             with self.subTest(fail=fail,include_manager=include_manager),tempfile.TemporaryDirectory() as temporary:
                 root=Path(temporary);exe=root/'game.exe'
                 data=bytearray(128);data[:2]=b'MZ';struct.pack_into('<I',data,60,64);data[64:68]=b'PE\0\0';struct.pack_into('<H',data,68,0x8664);exe.write_bytes(data)
@@ -40,7 +40,9 @@ class DialogTests(unittest.TestCase):
                 window=QWidget();window.game_detection=Mock();window.game_detection.status.return_value='Stopped'
                 game=dict(Id='existing',Name='Example',PlayActions=[dict(Name='Vanilla',Integration=provider.id,GameId='12')])
                 window.games=[game];window.data=root;window.game_providers=[provider];window.focus_added_game=Mock()
-                dialog=InstallDialog(window,game,provider)
+                dialog=InstallDialog(window,game,provider if integrated else None)
+                dialog.add_lutris.setChecked(integrated)
+                if not integrated:dialog.executable.setText(str(exe))
                 self.assertTrue(dialog.configuration_manager.isChecked())
                 dialog.configuration_manager.setChecked(include_manager)
                 manager_archive=io.BytesIO()
@@ -53,6 +55,11 @@ class DialogTests(unittest.TestCase):
                     self.assertIn('registration failed',dialog.status.text())
                     self.assertFalse((root/'winhttp.dll').exists());self.assertFalse((root/'BepInEx').exists())
                     self.assertEqual(len(window.games[0]['PlayActions']),1)
+                elif not integrated:
+                    self.assertEqual(window.games[0]['PlayActions'],game['PlayActions'])
+                    provider.create_variant.assert_not_called()
+                    self.assertIsNone(window.games[0]['BepInExInstallation']['id'])
+                    self.assertTrue((root/'winhttp.dll').exists())
                 else:
                     self.assertEqual(len(window.games[0]['PlayActions']),2)
                     self.assertEqual(window.games[0]['PlayActions'][1]['Name'],'Play Example - Modded')

@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 from PyQt6.QtCore import QObject,QRunnable,QThreadPool,pyqtSignal
-from PyQt6.QtWidgets import QDialog,QVBoxLayout,QLabel,QComboBox,QPushButton,QHBoxLayout,QCheckBox
+from PyQt6.QtWidgets import QDialog,QVBoxLayout,QLabel,QComboBox,QPushButton,QHBoxLayout,QCheckBox,QLineEdit
 from playlite.play_actions import actions_for
 from .installer import detect,package,fetch,payload,Installation,overrides,configuration_manager_package
 
@@ -28,11 +28,12 @@ class InstallDialog(QDialog):
         self.window=window;self.game=game;self.lutris=lutris;self.job=None
         self.setWindowTitle('Install BepInEx');self.resize(600,260)
         layout=QVBoxLayout(self)
-        explanation=QLabel('Install stable BepInEx 5 for a Windows Unity Mono game. A separate “[Game] - Modded” Lutris entry will use the same runner and prefix, with BepInEx loading enabled. Existing game files will never be overwritten.')
+        explanation=QLabel('Install stable BepInEx 5 beside the game executable. Optionally copy an existing Lutris entry to “[Game] - Modded” and add the BepInEx DLL override to the copy. Existing game files will never be overwritten.')
         explanation.setWordWrap(True);layout.addWidget(explanation)
         self.source=QComboBox()
-        ids={str(action.get('GameId')) for action in actions_for(game,[lutris]) if action.get('Integration')==lutris.id}
-        for item in lutris.import_games():
+        available=lutris and all(callable(getattr(lutris,name,None)) for name in ('create_variant','launch_configuration'))
+        ids={str(action.get('GameId')) for action in actions_for(game,[lutris]) if action.get('Integration')==lutris.id} if available else set()
+        for item in lutris.import_games() if available else []:
             if str(item.get('LutrisId')) not in ids:continue
             try:
                 executable,architecture=detect(item.get('Executable') or '')
@@ -40,34 +41,56 @@ class InstallDialog(QDialog):
                 if str(configuration.get('playlite_variant','')).endswith(':BepInEx'):continue
             except (ValueError,OSError):continue
             self.source.addItem(f'{item["Name"]} — {architecture}',item)
-        layout.addWidget(self.source)
+        self.add_lutris=QCheckBox('Add Lutris integration (copy the existing entry)')
+        self.add_lutris.setEnabled(bool(self.source.count()))
+        self.add_lutris.setChecked(bool(self.source.count()))
+        if not self.source.count():self.add_lutris.setToolTip('Requires Lutris Integration 1.1.17 or newer and an existing supported Lutris action.')
+        layout.addWidget(self.add_lutris);layout.addWidget(self.source)
+        executable=game.get('Executable') or game.get('BepInExInstallation',{}).get('executable') or ''
+        if not executable:
+            executable=next((action.get('Executable') for action in game.get('PlayActions',[]) or [] if action.get('Executable')),'')
+        self.executable=QLineEdit(executable)
+        self.browse_button=QPushButton('Browse executable…');self.browse_button.clicked.connect(self.browse_executable)
+        executable_row=QHBoxLayout();executable_row.addWidget(self.executable);executable_row.addWidget(self.browse_button);layout.addLayout(executable_row)
+        self.add_lutris.toggled.connect(self.update_controls)
         self.configuration_manager=QCheckBox('Include Configuration Manager (in-game settings, F1)')
         self.configuration_manager.setChecked(True);layout.addWidget(self.configuration_manager)
-        self.status=QLabel('Choose the source Lutris entry.');self.status.setWordWrap(True);layout.addWidget(self.status)
+        self.status=QLabel('Choose the game executable, or enable Lutris integration to copy an existing entry.');self.status.setWordWrap(True);layout.addWidget(self.status)
         footer=QHBoxLayout();footer.addStretch()
-        self.install_button=QPushButton('Install and add modded launch');self.install_button.clicked.connect(self.start)
+        self.install_button=QPushButton('Install');self.install_button.clicked.connect(self.start)
         self.close_button=QPushButton('Close');self.close_button.clicked.connect(self.reject)
         footer.addWidget(self.install_button);footer.addWidget(self.close_button);layout.addLayout(footer)
-        if not self.source.count():
-            self.status.setText('No supported Windows Unity Mono Lutris action was found for this game. IL2CPP and native Linux games are not supported.')
-            self.install_button.setEnabled(False)
+        self.update_controls()
+
+    def update_controls(self):
+        integrated=self.add_lutris.isChecked()
+        self.source.setVisible(integrated)
+        self.executable.setEnabled(not integrated and self.job is None)
+        self.browse_button.setEnabled(not integrated and self.job is None)
+
+    def browse_executable(self):
+        from playlite.lifecycle import choose_file
+        path=choose_file(self,'Choose the game executable',self.executable.text() or self.game.get('InstallDirectory',''),'Windows executables (*.exe)')
+        if path:self.executable.setText(path)
 
     def reject(self):
         if self.job is None:super().reject()
 
     def start(self):
         if self.job:return
-        source=self.source.currentData()
+        integrated=self.add_lutris.isChecked()
+        source=self.source.currentData() if integrated else dict(Executable=self.executable.text().strip())
         if not source:return
-        if self.window.game_detection.status(self.game['Id']) in ('Launching','Running') or self.game['Id'] in self.lutris.detect_running([self.game]):
+        if self.window.game_detection.status(self.game['Id']) in ('Launching','Running') or (self.lutris and self.game['Id'] in self.lutris.detect_running([self.game])):
             self.status.setText('Close the game before installing BepInEx.');return
         self.install_button.setEnabled(False);self.close_button.setEnabled(False);self.source.setEnabled(False)
+        self.add_lutris.setEnabled(False);self.executable.setEnabled(False);self.browse_button.setEnabled(False)
         include_manager=self.configuration_manager.isChecked()
         self.configuration_manager.setEnabled(False)
         def operation(progress):
             executable,architecture=detect(source['Executable'])
-            configuration=self.lutris.launch_configuration(source['LutrisId'])
-            if Path(configuration['game']['exe']).resolve()!=executable:raise ValueError('The source executable changed. Reopen this installer.')
+            configuration=self.lutris.launch_configuration(source['LutrisId']) if integrated else {}
+            if integrated and Path(configuration['game']['exe']).resolve()!=executable:raise ValueError('The source executable changed. Reopen this installer.')
             progress('Finding the stable BepInEx release…')
             url,version,expected=package(architecture)
             progress('Downloading BepInEx '+version+'…');archive=fetch(url)
@@ -88,21 +111,24 @@ class InstallDialog(QDialog):
             install=Installation(executable.parent,files)
             progress('Installing BepInEx beside the game executable…');install.apply()
             try:
-                progress('Creating the modded Lutris entry…')
+                result={'id':None}
+                if integrated:progress('Copying the existing Lutris entry and adding the DLL override…')
                 environment=configuration.get('system',{}).get('env',{}) or {}
-                result=self.lutris.create_variant(source['LutrisId'],self.game['Name']+' - Modded','BepInEx',
+                if integrated:result=self.lutris.create_variant(source['LutrisId'],self.game['Name']+' - Modded','BepInEx',
                     environment={'WINEDLLOVERRIDES':overrides(environment.get('WINEDLLOVERRIDES',''))},
                     dll_overrides={'winhttp':'n,b'})
             except Exception:install.rollback();raise
-            return dict(id=result['id'],version=version,sha256=digest,executable=str(executable),source=source,files={name:hashlib.sha256(content).hexdigest() for name,content in files.items()})
+            return dict(id=result['id'],version=version,sha256=digest,executable=str(executable),source=source,integrated=integrated,files={name:hashlib.sha256(content).hexdigest() for name,content in files.items()})
         self.job=Job(operation)
         self.job.signals.progress.connect(self.status.setText)
         self.job.signals.finished.connect(self.finished_install)
         QThreadPool.globalInstance().start(self.job)
 
     def finished_install(self,result,error):
+        self.add_lutris.setEnabled(bool(self.source.count()))
         self.configuration_manager.setEnabled(True)
         self.job=None;self.close_button.setEnabled(True);self.source.setEnabled(True)
+        self.update_controls()
         if error:
             self.status.setText(error);self.install_button.setEnabled(True);return
         try:
@@ -111,14 +137,17 @@ class InstallDialog(QDialog):
             latest=next(game for game in self.window.games if game['Id']==self.game['Id'])
             updated=copy.deepcopy(latest)
             actions=copy.deepcopy(updated['PlayActions'] or []) if 'PlayActions' in updated else actions_for(updated,self.window.game_providers)
-            if not any(action.get('Integration')==self.lutris.id and str(action.get('GameId'))==str(result['id']) for action in actions):
+            if result['integrated'] and not any(action.get('Integration')==self.lutris.id and str(action.get('GameId'))==str(result['id']) for action in actions):
                 actions.append(dict(Name='Play '+updated['Name']+' - Modded',Integration=self.lutris.id,GameId=str(result['id']),
                     Executable=result['executable'],Prefix=result['source'].get('Prefix') or '',Arguments='',InstallDirectory=str(Path(result['executable']).parent)))
-            updated['PlayActions']=actions
+            if result['integrated']:updated['PlayActions']=actions
+            previous=updated.get('BepInExInstallation',{})
             updated['BepInExInstallation']={key:result[key] for key in ('id','version','sha256','executable','files')}
+            if not result['integrated'] and previous.get('executable')==result['executable']:
+                updated['BepInExInstallation']['id']=previous.get('id')
             self.window.games=save_game(self.window.data,self.window.games,updated)
             self.window.focus_added_game(updated['Id'])
         except Exception as error:
-            self.status.setText('BepInEx and Lutris entry installed, but the Playlite action could not be saved: '+str(error))
+            self.status.setText('BepInEx installed, but its Playlite installation record could not be saved: '+str(error))
             self.install_button.setEnabled(True);return
-        self.status.setText('Installed BepInEx '+result['version']+'. Select “Play [Game] - Modded” from the Play dropdown.')
+        self.status.setText('Installed BepInEx '+result['version']+('. Select “Play [Game] - Modded” from the Play dropdown.' if result['integrated'] else '. Files installed; launcher configuration was not changed.'))

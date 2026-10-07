@@ -7,9 +7,7 @@ class Plugin(GenericPlugin):
     def game_actions(self,window,game):
         folder_actions=[('Open BepInEx plugins folder',lambda:self.open_plugins_folder(window,game))] if self.plugins_folder(game) else []
         lutris=discover_plugins().get('LutrisIntegration')
-        if not lutris:return folder_actions
-        if not any(action.get('Integration')==lutris.id for action in actions_for(game,[lutris])):return folder_actions
-        actions=[('Install BepInEx and add modded launch…',lambda:self.install(window,game,lutris))]
+        actions=[('Install BepInEx…',lambda:self.install(window,game,lutris))]
         if game.get('BepInExInstallation'):
             actions.append(('Uninstall BepInEx…',lambda:self.uninstall(window,game,lutris)))
         return folder_actions+actions
@@ -44,9 +42,7 @@ class Plugin(GenericPlugin):
         from .dialog import InstallDialog
         from playlite.lifecycle import run_dialog,show_warning
         try:
-            if not all(callable(getattr(lutris,name,None)) for name in ('create_variant','launch_configuration')):
-                raise ValueError('Update Lutris Integration to a version supporting modded launch variants.')
-            if window.game_detection.status(game['Id']) in ('Launching','Running') or game['Id'] in lutris.detect_running([game]):
+            if window.game_detection.status(game['Id']) in ('Launching','Running') or (lutris and game['Id'] in lutris.detect_running([game])):
                 raise ValueError('Close the game before installing BepInEx.')
             run_dialog(InstallDialog(window,game,lutris))
         except (ValueError,OSError) as error:show_warning(window,'BepInEx Installer',str(error))
@@ -59,7 +55,7 @@ class Plugin(GenericPlugin):
         from .installer import detect,fetch,payload
         from .uninstall import Removal
         try:
-            if window.game_detection.status(game['Id']) in ('Launching','Running') or game['Id'] in lutris.detect_running([game]):
+            if window.game_detection.status(game['Id']) in ('Launching','Running') or (lutris and game['Id'] in lutris.detect_running([game])):
                 raise ValueError('Close the game before uninstalling BepInEx.')
             dialog=QDialog(window);dialog.setWindowTitle('Uninstall BepInEx')
             layout=QVBoxLayout(dialog)
@@ -88,10 +84,13 @@ class Plugin(GenericPlugin):
             removal=Removal(executable.parent,hashes,keep.isChecked());backup=None
             removal.apply()
             try:
-                backup=lutris.delete_entry(dict(latest,PlayActions=[dict(Integration=lutris.id,GameId=str(record['id']))]))
+                if record.get('id') is not None:
+                    if lutris is None:raise ValueError('Install Lutris Integration to remove the associated modded entry.')
+                    backup=lutris.delete_entry(dict(latest,PlayActions=[dict(Integration=lutris.id,GameId=str(record['id']))]))
                 updated=copy.deepcopy(latest)
-                updated['PlayActions']=[action for action in actions_for(latest,window.game_providers)
-                    if not (action.get('Integration')==lutris.id and str(action.get('GameId'))==str(record['id']))]
+                if record.get('id') is not None:
+                    updated['PlayActions']=[action for action in actions_for(latest,window.game_providers)
+                        if not (action.get('Integration')==lutris.id and str(action.get('GameId'))==str(record['id']))]
                 updated.pop('BepInExInstallation',None)
                 window.games=save_game(window.data,window.games,updated)
             except Exception:

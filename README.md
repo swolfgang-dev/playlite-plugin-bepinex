@@ -1,10 +1,12 @@
 # BepInEx Installer for Playlite
 
-Installs stable BepInEx 5 for Windows Unity Mono games launched through Lutris. Requires Lutris Integration 1.1.17 or newer. The manifest declares this dependency so Playlite can install or update it before installing BepInEx Installer. Dependency resolution requires Playlite 0.2.60 or newer.
+Installs stable BepInEx 5 for Windows Unity Mono games. Lutris Integration is optional.
 
-Choose **Install BepInEx and add modded launch** in a game's plugin actions. The installer detects x86/x64 from the executable, downloads the matching official stable package, and extracts it beside the executable. Existing differing files, symlinks, and unsafe archives are rejected. Files created by this operation are rolled back if Lutris registration fails.
+Choose **Install BepInEx…** in a game's plugin actions. Select the game executable or check **Add Lutris integration (copy the existing entry)**. The Lutris option is available when Lutris Integration 1.1.17 or newer and a supported existing Lutris action are present; otherwise choose an executable for files-only installation.
 
-Creates a separate **[Game] - Modded** Lutris entry and appends a **Play [Game] - Modded** Playlite action. The original entry is not edited. The new entry copies its prefix, runner, arguments, and options, sets the working directory to the executable directory, and enables `winhttp=n,b` in the modded entry. Existing unrelated DLL overrides are preserved. Repeating installation reuses the plugin's variant without creating another entry.
+The installer detects x86/x64, downloads the matching official stable package, and extracts it beside the executable. Existing differing files, symlinks, and unsafe archives are rejected. When Lutris integration is unchecked, launcher configurations and Playlite actions are unchanged.
+
+When checked, it copies the existing Lutris configuration into a separate **[Game] - Modded** entry and adds **Play [Game] - Modded** to Playlite. The source is unchanged. Its prefix, runner, arguments, environment, and existing DLL overrides are preserved; `winhttp=n,b` is added to the copy. The working directory is the executable directory. Retries reuse the variant; newly installed files are rolled back if copying the Lutris entry fails.
 
 Only stable Unity Mono is supported. IL2CPP, .NET/XNA, and native Linux builds are not offered. No game is launched by the installer. Run the modded entry once to generate BepInEx configuration, then place compatible mods under `BepInEx/plugins`.
 
