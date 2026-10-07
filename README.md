@@ -13,3 +13,5 @@ Packages are fetched from [BepInEx releases](https://github.com/BepInEx/BepInEx/
 [Official Wine/Proton setup](https://docs.bepinex.dev/articles/advanced/proton_wine.html).
 
 Tests: `python3 -m unittest discover -s tests -v`. Package: `python3 tools/build_release.py`.
+
+Choose **Uninstall BepInEx…** to remove the runtime, its modded Lutris entry, and the matching Playlite action. **Keep user data** is checked by default and preserves plugins, configuration, and patchers. Uncheck it to remove the entire BepInEx directory. Game files and Wine prefixes are retained. Older installations retrieve the original package to verify installed runtime files before removal.

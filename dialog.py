@@ -81,7 +81,7 @@ class InstallDialog(QDialog):
                     environment={'WINEDLLOVERRIDES':overrides(environment.get('WINEDLLOVERRIDES',''))},
                     dll_overrides={'winhttp':'n,b'})
             except Exception:install.rollback();raise
-            return dict(id=result['id'],version=version,sha256=digest,executable=str(executable),source=source)
+            return dict(id=result['id'],version=version,sha256=digest,executable=str(executable),source=source,files={name:hashlib.sha256(content).hexdigest() for name,content in files.items()})
         self.job=Job(operation)
         self.job.signals.progress.connect(self.status.setText)
         self.job.signals.finished.connect(self.finished_install)
@@ -101,7 +101,7 @@ class InstallDialog(QDialog):
                 actions.append(dict(Name='Play '+updated['Name']+' - Modded',Integration=self.lutris.id,GameId=str(result['id']),
                     Executable=result['executable'],Prefix=result['source'].get('Prefix') or '',Arguments='',InstallDirectory=str(Path(result['executable']).parent)))
             updated['PlayActions']=actions
-            updated['BepInExInstallation']={key:result[key] for key in ('id','version','sha256','executable')}
+            updated['BepInExInstallation']={key:result[key] for key in ('id','version','sha256','executable','files')}
             self.window.games=save_game(self.window.data,self.window.games,updated)
             self.window.focus_added_game(updated['Id'])
         except Exception as error:
