@@ -99,6 +99,17 @@ def payload(archive, configuration_manager=False):
         return files
 
 
+def installation_defaults(root,files):
+    """Seed manager protection without replacing an existing user config."""
+    config=Path(root)/'BepInEx/config/BepInEx.cfg'
+    if config.is_symlink() or (config.parent.exists() and config.parent.is_symlink()):
+        raise ValueError('Refusing a symlinked BepInEx configuration path.')
+    result=dict(files)
+    if not config.exists():
+        result['BepInEx/config/BepInEx.cfg']=b'[Chainloader]\n\nHideManagerGameObject = true\n'
+    return result
+
+
 class Installation:
     def __init__(self,root,files):
         self.root=Path(root);self.files=files;self.created=[];self.directories=[]

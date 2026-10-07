@@ -5,7 +5,7 @@ import tempfile
 from PyQt6.QtCore import QObject,QRunnable,QThreadPool,pyqtSignal
 from PyQt6.QtWidgets import QApplication,QWidget,QDialog,QVBoxLayout,QLabel,QComboBox,QPushButton,QHBoxLayout,QCheckBox,QLineEdit,QLayout,QSizePolicy
 from playlite.play_actions import actions_for
-from .installer import detect,package,fetch,payload,Installation,overrides,configuration_manager_package,executable_candidates
+from .installer import detect,package,fetch,payload,Installation,overrides,configuration_manager_package,executable_candidates,installation_defaults
 from .steam_setup import LAUNCH_OPTIONS,steam_apps,open_properties
 
 
@@ -164,6 +164,7 @@ class InstallDialog(QDialog):
                 with tempfile.TemporaryDirectory(prefix='playlite-bepinex-manager-') as temporary:
                     path=Path(temporary)/'manager.zip';path.write_bytes(manager_archive)
                     files.update(payload(path,configuration_manager=True))
+            files=installation_defaults(executable.parent,files)
             install=Installation(executable.parent,files)
             progress('Installing BepInEx beside the game executable…');install.apply()
             try:

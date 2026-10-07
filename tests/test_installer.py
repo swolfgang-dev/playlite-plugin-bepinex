@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 from zipfile import ZipFile
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from installer import detect,payload,Installation,overrides,package,executable_candidates
+from installer import detect,payload,Installation,overrides,package,executable_candidates,installation_defaults
 
 
 def executable(machine=0x8664):
@@ -15,6 +15,19 @@ def executable(machine=0x8664):
 
 
 class InstallerTests(unittest.TestCase):
+    def test_manager_protection_default_preserves_existing_config_and_rolls_back(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);name='BepInEx/config/BepInEx.cfg'
+            files=installation_defaults(root,{'winhttp.dll':b'dll'})
+            install=Installation(root,files);install.apply()
+            self.assertIn(b'HideManagerGameObject = true',(root/name).read_bytes())
+            install.rollback();self.assertFalse((root/name).exists())
+            (root/name).parent.mkdir(parents=True);(root/name).write_bytes(b'[Chainloader]\nHideManagerGameObject = false\n')
+            files=installation_defaults(root,{'winhttp.dll':b'dll'})
+            self.assertNotIn(name,files)
+            Installation(root,files).apply()
+            self.assertIn(b'false',(root/name).read_bytes())
+
     def test_finds_only_supported_local_mono_executables(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);game=root/'game';game.mkdir()
