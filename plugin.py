@@ -12,7 +12,7 @@ class Plugin(GenericPlugin):
         actions=[('Install BepInEx and add modded launch…',lambda:self.install(window,game,lutris))]
         if game.get('BepInExInstallation'):
             actions.append(('Uninstall BepInEx…',lambda:self.uninstall(window,game,lutris)))
-        return actions+folder_actions
+        return folder_actions+actions
 
     @staticmethod
     def plugins_folder(game):
