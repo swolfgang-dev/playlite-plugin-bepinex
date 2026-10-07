@@ -1,12 +1,12 @@
 from pathlib import Path
-from playlite.providers import GenericPlugin,discover_plugins
+from playlite.providers import GenericPlugin
 from playlite.play_actions import actions_for
 
 
 class Plugin(GenericPlugin):
     def game_actions(self,window,game):
         folder_actions=[('Open BepInEx plugins folder',lambda:self.open_plugins_folder(window,game))] if self.plugins_folder(game) else []
-        lutris=discover_plugins().get('LutrisIntegration')
+        lutris=getattr(window,'plugins',{}).get('LutrisIntegration')
         actions=[('Install BepInEx…',lambda:self.install(window,game,lutris))]
         if game.get('BepInExInstallation'):
             actions.append(('Uninstall BepInEx…',lambda:self.uninstall(window,game,lutris)))
