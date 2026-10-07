@@ -24,6 +24,32 @@ class Provider(IntegrationPlugin):
 class DialogTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):cls.app=QApplication.instance() or QApplication([])
+    def test_steam_setup_copies_options_and_opens_linked_action(self):
+        from bepinex_ui_test.steam_setup import LAUNCH_OPTIONS,steam_apps,open_properties
+        window=QWidget()
+        game=dict(Name='Example',PlayActions=[dict(Name='Play Example',Integration='SteamIntegration',GameId='440')])
+        dialog=InstallDialog(window,game,None)
+        self.assertFalse(dialog.steam_setup.isHidden())
+        dialog.copy_steam_button.click()
+        self.assertEqual(QApplication.clipboard().text(),LAUNCH_OPTIONS)
+        with patch('bepinex_ui_test.dialog.open_properties') as launch:
+            dialog.open_steam_button.click();launch.assert_called_once_with('440')
+        with patch('bepinex_ui_test.dialog.open_properties',side_effect=OSError('unavailable')):
+            dialog.open_steam_button.click()
+            self.assertIn('unavailable',dialog.steam_feedback.text())
+        self.assertEqual(steam_apps(dict(SteamAppId='0440',PlayActions=game['PlayActions'])),[('440','Game')])
+        with patch('bepinex_ui_test.steam_setup.subprocess.Popen') as launch:
+            open_properties('440')
+            self.assertEqual(launch.call_args.args[0],['xdg-open','steam://gameproperties/440'])
+            with self.assertRaises(ValueError):open_properties('440/../../')
+            self.assertEqual(launch.call_count,1)
+        dialog.close();window.close()
+
+    def test_steam_setup_hidden_without_linked_steam_game(self):
+        window=QWidget();dialog=InstallDialog(window,dict(Name='Example'),None)
+        self.assertTrue(dialog.steam_setup.isHidden())
+        dialog.close();window.close()
+
     def test_install_creates_modded_action_and_registration_failure_rolls_back(self):
         for fail,include_manager,integrated in ((False,False,True),(False,True,True),(True,True,True),(False,False,False),(False,True,False)):
             with self.subTest(fail=fail,include_manager=include_manager),tempfile.TemporaryDirectory() as temporary:

@@ -3,9 +3,10 @@ import json
 from pathlib import Path
 import tempfile
 from PyQt6.QtCore import QObject,QRunnable,QThreadPool,pyqtSignal
-from PyQt6.QtWidgets import QDialog,QVBoxLayout,QLabel,QComboBox,QPushButton,QHBoxLayout,QCheckBox,QLineEdit
+from PyQt6.QtWidgets import QApplication,QWidget,QDialog,QVBoxLayout,QLabel,QComboBox,QPushButton,QHBoxLayout,QCheckBox,QLineEdit
 from playlite.play_actions import actions_for
 from .installer import detect,package,fetch,payload,Installation,overrides,configuration_manager_package
+from .steam_setup import LAUNCH_OPTIONS,steam_apps,open_properties
 
 
 class Signals(QObject):
@@ -55,6 +56,21 @@ class InstallDialog(QDialog):
         self.add_lutris.toggled.connect(self.update_controls)
         self.configuration_manager=QCheckBox('Include Configuration Manager (in-game settings, F1)')
         self.configuration_manager.setChecked(True);layout.addWidget(self.configuration_manager)
+        self.steam_setup=QWidget();steam_layout=QVBoxLayout(self.steam_setup)
+        steam_layout.setContentsMargins(0,0,0,0)
+        steam_help=QLabel('For Steam / Proton, after installation open Steam Properties → General → Launch Options and add the winhttp override shown below. If launch options already exist, preserve them and add the override before %command%; do not add a second %command%. This enables BepInEx for all Steam launches of this game.')
+        steam_help.setWordWrap(True);steam_layout.addWidget(steam_help)
+        self.steam_options=QLineEdit(LAUNCH_OPTIONS);self.steam_options.setReadOnly(True);steam_layout.addWidget(self.steam_options)
+        self.steam_game=QComboBox()
+        for app_id,name in steam_apps(game):self.steam_game.addItem(f'{name} — {app_id}',app_id)
+        self.steam_game.setVisible(self.steam_game.count()>1);steam_layout.addWidget(self.steam_game)
+        steam_buttons=QHBoxLayout()
+        self.copy_steam_button=QPushButton('Copy launch options');self.copy_steam_button.clicked.connect(self.copy_steam_options)
+        self.open_steam_button=QPushButton('Open Steam Properties');self.open_steam_button.clicked.connect(self.open_steam_properties)
+        steam_buttons.addWidget(self.copy_steam_button);steam_buttons.addWidget(self.open_steam_button);steam_buttons.addStretch()
+        steam_layout.addLayout(steam_buttons)
+        self.steam_feedback=QLabel();self.steam_feedback.setWordWrap(True);steam_layout.addWidget(self.steam_feedback)
+        layout.addWidget(self.steam_setup)
         self.status=QLabel('Choose the game executable, or enable Lutris integration to copy an existing entry.');self.status.setWordWrap(True);layout.addWidget(self.status)
         footer=QHBoxLayout();footer.addStretch()
         self.install_button=QPushButton('Install');self.install_button.clicked.connect(self.start)
@@ -67,6 +83,16 @@ class InstallDialog(QDialog):
         self.source.setVisible(integrated)
         self.executable.setEnabled(not integrated and self.job is None)
         self.browse_button.setEnabled(not integrated and self.job is None)
+        self.steam_setup.setVisible(not integrated and bool(self.steam_game.count()))
+
+    def copy_steam_options(self):
+        QApplication.clipboard().setText(LAUNCH_OPTIONS)
+        self.steam_feedback.setText('Copied. Paste into Steam → Properties → General → Launch Options, preserving any existing options.')
+
+    def open_steam_properties(self):
+        try:open_properties(self.steam_game.currentData())
+        except (ValueError,OSError) as error:self.steam_feedback.setText('Could not open Steam Properties: '+str(error))
+        else:self.steam_feedback.setText('In Steam Properties, select General → Launch Options.')
 
     def browse_executable(self):
         from playlite.lifecycle import choose_file

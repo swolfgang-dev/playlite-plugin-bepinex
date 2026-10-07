@@ -6,6 +6,8 @@ Choose **Install BepInEx…** in a game's plugin actions. Select the game execut
 
 The installer detects x86/x64, downloads the matching official stable package, and extracts it beside the executable. Existing differing files, symlinks, and unsafe archives are rejected. When Lutris integration is unchecked, launcher configurations and Playlite actions are unchanged.
 
+For games linked to Steam, files-only installation shows **Copy launch options** and **Open Steam Properties**. Paste `WINEDLLOVERRIDES="winhttp=n,b" %command%` into **General → Launch Options** after installation. Preserve existing options and add the override before their existing `%command%`, rather than duplicating it. The Properties button targets the linked Steam app (with a selector if multiple Steam actions exist), works through the desktop Steam protocol handler, and does not require debugging mode. Steam settings are never rewritten automatically. These options enable BepInEx for every Steam launch of that game.
+
 When checked, it copies the existing Lutris configuration into a separate **[Game] - Modded** entry and adds **Play [Game] - Modded** to Playlite. The source is unchanged. Its prefix, runner, arguments, environment, and existing DLL overrides are preserved; `winhttp=n,b` is added to the copy. The working directory is the executable directory. Retries reuse the variant; newly installed files are rolled back if copying the Lutris entry fails.
 
 Only stable Unity Mono is supported. IL2CPP, .NET/XNA, and native Linux builds are not offered. No game is launched by the installer. Run the modded entry once to generate BepInEx configuration, then place compatible mods under `BepInEx/plugins`.
