@@ -29,6 +29,8 @@ class InstallDialog(QDialog):
         self.window=window;self.game=game;self.lutris=lutris;self.job=None
         self.setWindowTitle('Install BepInEx');self.resize(800,600)
         layout=QVBoxLayout(self)
+        layout.setContentsMargins(20,20,20,20)
+        layout.setSpacing(12)
         layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         explanation=QLabel('Install stable BepInEx 5 beside the game executable. Optionally copy an existing Lutris entry to “[Game] - Modded” and add the BepInEx DLL override to the copy. Existing game files will never be overwritten.')
         explanation.setWordWrap(True);layout.addWidget(explanation)
@@ -92,7 +94,8 @@ class InstallDialog(QDialog):
         for control in (self.steam_options,self.copy_steam_button,self.open_steam_button):
             control.ensurePolished();control.setMinimumHeight(control.sizeHint().height())
         self.fit_steam_help()
-        self.adjustSize()
+        self.setMinimumWidth(800)
+        self.resize(900,max(600,self.sizeHint().height()))
 
     def fit_steam_help(self):
         if hasattr(self,'steam_help'):
