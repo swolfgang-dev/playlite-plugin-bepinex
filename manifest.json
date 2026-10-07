@@ -6,6 +6,13 @@
   "type": "generic",
   "enabled": true,
   "repository": "swolfgang-dev/playlite-plugin-bepinex",
-  "minimum_playlite_version": "0.2.44",
-  "description": "Install stable BepInEx for Windows Unity Mono games and create a separate modded Lutris launch entry."
+  "minimum_playlite_version": "0.2.60",
+  "description": "Install stable BepInEx for Windows Unity Mono games and create a separate modded Lutris launch entry.",
+  "plugin_dependencies": [
+    {
+      "id": "LutrisIntegration",
+      "repository": "swolfgang-dev/playlite-plugin-lutris-integration",
+      "minimum_version": "1.1.17"
+    }
+  ]
 }

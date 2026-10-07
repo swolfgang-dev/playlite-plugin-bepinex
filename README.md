@@ -1,6 +1,6 @@
 # BepInEx Installer for Playlite
 
-Installs stable BepInEx 5 for Windows Unity Mono games launched through Lutris. Requires Lutris Integration with the `create_variant` and `launch_configuration` APIs.
+Installs stable BepInEx 5 for Windows Unity Mono games launched through Lutris. Requires Lutris Integration 1.1.17 or newer. The manifest declares this dependency so Playlite can install or update it before installing BepInEx Installer. Dependency resolution requires Playlite 0.2.60 or newer.
 
 Choose **Install BepInEx and add modded launch** in a game's plugin actions. The installer detects x86/x64 from the executable, downloads the matching official stable package, and extracts it beside the executable. Existing differing files, symlinks, and unsafe archives are rejected. Files created by this operation are rolled back if Lutris registration fails.
 
