@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 from PyQt6.QtCore import QObject,QRunnable,QThreadPool,pyqtSignal
-from PyQt6.QtWidgets import QApplication,QWidget,QDialog,QVBoxLayout,QLabel,QComboBox,QPushButton,QHBoxLayout,QCheckBox,QLineEdit
+from PyQt6.QtWidgets import QApplication,QWidget,QDialog,QVBoxLayout,QLabel,QComboBox,QPushButton,QHBoxLayout,QCheckBox,QLineEdit,QLayout,QSizePolicy
 from playlite.play_actions import actions_for
 from .installer import detect,package,fetch,payload,Installation,overrides,configuration_manager_package
 from .steam_setup import LAUNCH_OPTIONS,steam_apps,open_properties
@@ -27,8 +27,9 @@ class InstallDialog(QDialog):
     def __init__(self,window,game,lutris):
         super().__init__(window)
         self.window=window;self.game=game;self.lutris=lutris;self.job=None
-        self.setWindowTitle('Install BepInEx');self.resize(600,260)
+        self.setWindowTitle('Install BepInEx');self.resize(800,600)
         layout=QVBoxLayout(self)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         explanation=QLabel('Install stable BepInEx 5 beside the game executable. Optionally copy an existing Lutris entry to “[Game] - Modded” and add the BepInEx DLL override to the copy. Existing game files will never be overwritten.')
         explanation.setWordWrap(True);layout.addWidget(explanation)
         self.source=QComboBox()
@@ -57,6 +58,8 @@ class InstallDialog(QDialog):
         self.configuration_manager=QCheckBox('Include Configuration Manager (in-game settings, F1)')
         self.configuration_manager.setChecked(True);layout.addWidget(self.configuration_manager)
         self.steam_setup=QWidget();steam_layout=QVBoxLayout(self.steam_setup)
+        steam_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+        self.steam_setup.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Minimum)
         steam_layout.setContentsMargins(0,0,0,0)
         steam_help=QLabel('For Steam / Proton, after installation open Steam Properties → General → Launch Options and add the winhttp override shown below. If launch options already exist, preserve them and add the override before %command%; do not add a second %command%. This enables BepInEx for all Steam launches of this game.')
         steam_help.setWordWrap(True);steam_layout.addWidget(steam_help)
@@ -77,6 +80,7 @@ class InstallDialog(QDialog):
         self.close_button=QPushButton('Close');self.close_button.clicked.connect(self.reject)
         footer.addWidget(self.install_button);footer.addWidget(self.close_button);layout.addLayout(footer)
         self.update_controls()
+        self.adjustSize()
 
     def update_controls(self):
         integrated=self.add_lutris.isChecked()
@@ -96,7 +100,7 @@ class InstallDialog(QDialog):
 
     def browse_executable(self):
         from playlite.lifecycle import choose_file
-        path=choose_file(self,'Choose the game executable',self.executable.text() or self.game.get('InstallDirectory',''),'Windows executables (*.exe)')
+        path,_=choose_file(self,'Choose the game executable',self.executable.text() or self.game.get('InstallDirectory',''),'Windows executables (*.exe)')
         if path:self.executable.setText(path)
 
     def reject(self):
