@@ -1,5 +1,4 @@
 import hashlib
-import json
 from pathlib import Path
 import tempfile
 from PyQt6.QtCore import QObject,QRunnable,QThreadPool,pyqtSignal
@@ -72,7 +71,11 @@ class InstallDialog(QDialog):
         steam_layout.setContentsMargins(0,0,0,0)
         steam_help=QLabel('For Steam / Proton, after installation open Steam Properties → General → Launch Options and add the winhttp override shown below. If launch options already exist, preserve them and add the override before %command%; do not add a second %command%. This enables BepInEx for all Steam launches of this game.')
         self.steam_help=steam_help
-        steam_help.setWordWrap(True);steam_layout.addWidget(steam_help)
+        steam_help.setWordWrap(True)
+        help_toggle=QPushButton('Steam launch instructions')
+        help_toggle.setCheckable(True);help_toggle.setChecked(False)
+        help_toggle.toggled.connect(steam_help.setVisible)
+        steam_layout.addWidget(help_toggle);steam_layout.addWidget(steam_help);steam_help.hide()
         self.steam_options=QLineEdit(LAUNCH_OPTIONS);self.steam_options.setReadOnly(True);steam_layout.addWidget(self.steam_options)
         self.steam_game=QComboBox()
         for app_id,name in steam_apps(game):self.steam_game.addItem(f'{name} — {app_id}',app_id)
@@ -86,16 +89,18 @@ class InstallDialog(QDialog):
         layout.addWidget(self.steam_setup)
         self.status=QLabel('Choose the game executable, or enable Lutris integration to copy an existing entry.');self.status.setWordWrap(True);layout.addWidget(self.status)
         footer=QHBoxLayout();footer.addStretch()
-        self.install_button=QPushButton('Install');self.install_button.clicked.connect(self.start)
+        self.install_button=QPushButton('Install');self.install_button.setProperty('primary',True);self.install_button.clicked.connect(self.start)
         self.close_button=QPushButton('Close');self.close_button.clicked.connect(self.reject)
         footer.addWidget(self.install_button);footer.addWidget(self.close_button);layout.addLayout(footer)
         self.update_controls()
+        from playlite.ui_layout import scroll_dialog_body
+        self.body_scroll=scroll_dialog_body(self,footer)
         self.ensurePolished()
         for control in (self.steam_options,self.copy_steam_button,self.open_steam_button):
             control.ensurePolished();control.setMinimumHeight(control.sizeHint().height())
         self.fit_steam_help()
-        self.setMinimumWidth(800)
-        self.resize(900,max(600,self.sizeHint().height()))
+        self.setMinimumWidth(480)
+        self.resize(800,min(680,max(540,self.sizeHint().height())))
 
     def fit_steam_help(self):
         if hasattr(self,'steam_help'):

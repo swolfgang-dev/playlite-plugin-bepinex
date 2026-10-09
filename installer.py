@@ -1,5 +1,4 @@
 """Stable Windows Unity Mono package detection and non-overwriting extraction."""
-import hashlib
 import json
 from pathlib import Path,PurePosixPath
 import re
