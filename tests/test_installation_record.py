@@ -57,3 +57,12 @@ class InstallationRecordTests(unittest.TestCase):
                 commit_installation(root, old, [], install, result)
             install.rollback.assert_called_once()
             self.assertEqual(path.read_text(), '[]')
+
+    def test_rollback_preserves_later_edits_to_installed_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            operation = Installation(root, {'winhttp.dll': b'installed'})
+            operation.apply()
+            (root / 'winhttp.dll').write_bytes(b'later edit')
+            operation.rollback()
+            self.assertEqual((root / 'winhttp.dll').read_bytes(), b'later edit')

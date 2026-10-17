@@ -129,7 +129,10 @@ class Installation:
                     self.created.append(target);stream.write(content)
         except Exception:self.rollback();raise
     def rollback(self):
-        for path in reversed(self.created):path.unlink(missing_ok=True)
+        for path in reversed(self.created):
+            expected=self.files[str(path.relative_to(self.root))]
+            if not path.is_symlink() and path.is_file() and path.read_bytes()==expected:
+                path.unlink()
         for path in reversed(self.directories):
             try:path.rmdir()
             except OSError:pass
