@@ -1,25 +1,17 @@
 import hashlib
 from pathlib import Path
 import tempfile
-from PyQt6.QtCore import QObject,QRunnable,QThreadPool,pyqtSignal
+from PyQt6.QtCore import QThreadPool
+from playlite.tasks import Task
 from PyQt6.QtWidgets import QApplication,QWidget,QDialog,QVBoxLayout,QLabel,QComboBox,QPushButton,QHBoxLayout,QCheckBox,QLineEdit,QLayout,QSizePolicy
 from playlite.play_actions import actions_for
 from .installer import detect,package,fetch,payload,Installation,overrides,configuration_manager_package,executable_candidates,installation_defaults
 from .steam_setup import LAUNCH_OPTIONS,steam_apps,open_properties
 
 
-class Signals(QObject):
-    progress=pyqtSignal(str)
-    finished=pyqtSignal(object,str)
-
-
-class Job(QRunnable):
+class Job(Task):
     def __init__(self,operation):
-        super().__init__();self.signals=Signals();self.operation=operation
-    def run(self):
-        try:result=self.operation(self.signals.progress.emit)
-        except Exception as error:self.signals.finished.emit(None,str(error))
-        else:self.signals.finished.emit(result,'')
+        super().__init__(lambda: operation(self.progress))
 
 
 class InstallDialog(QDialog):
@@ -183,7 +175,8 @@ class InstallDialog(QDialog):
             return dict(id=result['id'],version=version,sha256=digest,executable=str(executable),source=source,integrated=integrated,files={name:hashlib.sha256(content).hexdigest() for name,content in files.items()})
         self.job=Job(operation)
         self.job.signals.progress.connect(self.status.setText)
-        self.job.signals.finished.connect(self.finished_install)
+        self.job.signals.succeeded.connect(lambda result: self.finished_install(result,''))
+        self.job.signals.failed.connect(lambda error: self.finished_install(None,error))
         QThreadPool.globalInstance().start(self.job)
 
     def finished_install(self,result,error):
