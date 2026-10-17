@@ -1,6 +1,7 @@
 import importlib.util
 import io
 import json
+from contextlib import nullcontext
 from pathlib import Path
 import struct
 import sys
@@ -73,6 +74,7 @@ class DialogTests(unittest.TestCase):
                 provider.import_games=Mock(return_value=[dict(Name='Example',LutrisId='12',Executable=str(exe),Prefix='/prefix')])
                 provider.launch_configuration=Mock(return_value={'game':{'exe':str(exe)},'system':{'env':{'WINEDLLOVERRIDES':'version=n'}}})
                 provider.create_variant=Mock(side_effect=ValueError('registration failed') if fail else None,return_value={'id':13})
+                provider.create_variant_transaction=lambda *args,**kwargs:nullcontext(provider.create_variant(*args,**kwargs))
                 window=QWidget();window.game_detection=Mock();window.game_detection.status.return_value='Stopped'
                 game=dict(Id='existing',Name='Example',PlayActions=[dict(Name='Vanilla',Integration=provider.id,GameId='12')])
                 window.games=[game];window.data=root;window.game_providers=[provider];window.focus_added_game=Mock()

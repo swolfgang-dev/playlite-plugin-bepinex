@@ -128,6 +128,13 @@ class InstallDialog(QDialog):
     def reject(self):
         if self.job is None:super().reject()
 
+    def shutdown_pending(self):
+        return self.job is not None
+
+    def request_shutdown(self):
+        if self.job is not None:
+            self.status.setText('Finishing installation before closing Playlite…')
+
     def start(self):
         if self.job:return
         integrated=self.add_lutris.isChecked()
@@ -164,19 +171,17 @@ class InstallDialog(QDialog):
             files=installation_defaults(executable.parent,files)
             install=Installation(executable.parent,files)
             progress('Installing BepInEx beside the game executable…');install.apply()
-            try:
-                result={'id':None}
-                if integrated:progress('Copying the existing Lutris entry and adding the DLL override…')
-                environment=configuration.get('system',{}).get('env',{}) or {}
-                if integrated:result=self.lutris.create_variant(source['LutrisId'],self.game['Name']+' - Modded','BepInEx',
-                    environment={'WINEDLLOVERRIDES':overrides(environment.get('WINEDLLOVERRIDES',''))},
-                    dll_overrides={'winhttp':'n,b'})
-            except Exception:install.rollback();raise
-            return dict(id=result['id'],version=version,sha256=digest,executable=str(executable),source=source,integrated=integrated,files={name:hashlib.sha256(content).hexdigest() for name,content in files.items()})
+            from .installation_record import commit_installation
+            environment=configuration.get('system',{}).get('env',{}) or {}
+            result=dict(version=version,sha256=digest,executable=str(executable),
+                source=source,integrated=integrated,
+                files={name:hashlib.sha256(content).hexdigest() for name,content in files.items()})
+            return commit_installation(self.window.data,self.game,list(self.window.game_providers),
+                install,result,self.lutris,{'WINEDLLOVERRIDES':overrides(environment.get('WINEDLLOVERRIDES',''))})
         self.job=Job(operation)
         self.job.signals.progress.connect(self.status.setText)
-        self.job.signals.succeeded.connect(lambda result: self.finished_install(result,''))
-        self.job.signals.failed.connect(lambda error: self.finished_install(None,error))
+        self.job.bind(self, lambda result: self.finished_install(result,''),
+                      lambda error: self.finished_install(None,error))
         QThreadPool.globalInstance().start(self.job)
 
     def finished_install(self,result,error):
@@ -186,23 +191,6 @@ class InstallDialog(QDialog):
         self.update_controls()
         if error:
             self.status.setText(error);self.install_button.setEnabled(True);return
-        try:
-            import copy
-            from playlite.editor import save_game
-            latest=next(game for game in self.window.games if game['Id']==self.game['Id'])
-            updated=copy.deepcopy(latest)
-            actions=copy.deepcopy(updated['PlayActions'] or []) if 'PlayActions' in updated else actions_for(updated,self.window.game_providers)
-            if result['integrated'] and not any(action.get('Integration')==self.lutris.id and str(action.get('GameId'))==str(result['id']) for action in actions):
-                actions.append(dict(Name='Play '+updated['Name']+' - Modded',Integration=self.lutris.id,GameId=str(result['id']),
-                    Executable=result['executable'],Prefix=result['source'].get('Prefix') or '',Arguments='',InstallDirectory=str(Path(result['executable']).parent)))
-            if result['integrated']:updated['PlayActions']=actions
-            previous=updated.get('BepInExInstallation',{})
-            updated['BepInExInstallation']={key:result[key] for key in ('id','version','sha256','executable','files')}
-            if not result['integrated'] and previous.get('executable')==result['executable']:
-                updated['BepInExInstallation']['id']=previous.get('id')
-            self.window.games=save_game(self.window.data,self.window.games,updated)
-            self.window.focus_added_game(updated['Id'])
-        except Exception as error:
-            self.status.setText('BepInEx installed, but its Playlite installation record could not be saved: '+str(error))
-            self.install_button.setEnabled(True);return
+        self.window.games=result['games']
+        self.window.focus_added_game(self.game['Id'])
         self.status.setText('Installed BepInEx '+result['version']+('. Select “Play [Game] - Modded” from the Play dropdown.' if result['integrated'] else '. Files installed; launcher configuration was not changed.'))
