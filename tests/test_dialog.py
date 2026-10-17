@@ -22,6 +22,16 @@ class Provider(IntegrationPlugin):
 
 
 class DialogTests(unittest.TestCase):
+    def test_installer_controls_belong_to_scrolling_body(self):
+        window = QWidget();dialog = InstallDialog(window, dict(Name='Example'), None)
+        body = dialog.body_scroll.widget()
+        for control in (dialog.executable, dialog.browse_button, dialog.add_lutris,
+                        dialog.configuration_manager, dialog.status):
+            self.assertTrue(body.isAncestorOf(control))
+        self.assertFalse(body.isAncestorOf(dialog.install_button))
+        self.assertFalse(body.isAncestorOf(dialog.close_button))
+        dialog.close();window.close()
+
     @classmethod
     def setUpClass(cls):cls.app=QApplication.instance() or QApplication([])
     def test_steam_setup_copies_options_and_opens_linked_action(self):
