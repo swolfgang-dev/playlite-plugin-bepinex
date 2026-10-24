@@ -1,4 +1,5 @@
-"""Stable Windows Unity Mono package detection and non-overwriting extraction."""
+"""Windows Unity runtime detection and non-overwriting BepInEx installation."""
+from html.parser import HTMLParser
 import json
 from pathlib import Path,PurePosixPath
 import re
@@ -6,14 +7,14 @@ import stat
 import struct
 import urllib.request
 from urllib.error import HTTPError
-from urllib.parse import urlparse
+from urllib.parse import urlparse,urljoin,unquote
 from zipfile import ZipFile
 
 REPOSITORY='BepInEx/BepInEx'
 
 
 def executable_candidates(directory):
-    """Find supported Mono executables for an already imported game."""
+    """Find supported Mono and IL2CPP executables for an imported game."""
     import os
     root=Path(directory).expanduser().resolve() if directory else None
     if root is None or not root.is_dir():return []
@@ -32,12 +33,21 @@ def executable_candidates(directory):
     return sorted(result,key=str.casefold)
 
 
+def runtime_kind(executable):
+    path=Path(executable)
+    data=path.with_name(path.stem+'_Data')
+    if (path.parent/'GameAssembly.dll').is_file():
+        if not (data/'il2cpp_data/Metadata/global-metadata.dat').is_file():
+            raise ValueError('IL2CPP metadata was not found for this executable.')
+        return 'il2cpp'
+    if (data/'Managed/Assembly-CSharp.dll').is_file():return 'mono'
+    raise ValueError('No supported Unity Mono assemblies or IL2CPP metadata were found beside this executable.')
+
+
 def detect(executable):
     path=Path(executable).expanduser().resolve(strict=True)
     if not path.is_file() or path.suffix.lower()!='.exe':raise ValueError('Select a Windows game executable.')
-    data=path.with_name(path.stem+'_Data')
-    if (path.parent/'GameAssembly.dll').exists():raise ValueError('IL2CPP is not supported by this stable Unity Mono installer.')
-    if not (data/'Managed'/'Assembly-CSharp.dll').is_file():raise ValueError('No Unity Mono managed assemblies were found beside this executable.')
+    runtime_kind(path)
     with path.open('rb') as stream:
         if stream.read(2)!=b'MZ':raise ValueError('The game is not a Windows executable.')
         stream.seek(60);header=stream.read(4)
@@ -60,7 +70,27 @@ def fetch(url):
     return data
 
 
-def package(architecture):
+def il2cpp_package(architecture):
+    if architecture not in ('x86','x64'):raise ValueError('Unsupported IL2CPP architecture.')
+    base='https://builds.bepinex.dev/projects/bepinex_be'
+    candidates=[]
+    class Links(HTMLParser):
+        def handle_starttag(self,tag,attrs):
+            if tag!='a':return
+            href=dict(attrs).get('href','')
+            url=urljoin(base,href);parsed=urlparse(url)
+            if parsed.scheme!='https' or parsed.netloc!='builds.bepinex.dev' or parsed.query or parsed.fragment:return
+            match=re.fullmatch(r'/projects/bepinex_be/(\d+)/BepInEx-Unity\.IL2CPP-win-'+architecture+r'-(6\.\d+\.\d+-be\.(\d+)\+[0-9a-f]+)\.zip',unquote(parsed.path))
+            if match and match[1]==match[3]:candidates.append((int(match[1]),url,match[2]))
+    Links().feed(fetch(base).decode('utf-8'))
+    if not candidates:raise ValueError('No official Windows IL2CPP '+architecture+' build was found.')
+    _,url,version=max(candidates)
+    return url,version,None
+
+
+def package(architecture,runtime='mono'):
+    if runtime=='il2cpp':return il2cpp_package(architecture)
+    if runtime!='mono':raise ValueError('Unsupported Unity runtime.')
     try:
         release=json.loads(fetch(f'https://api.github.com/repos/{REPOSITORY}/releases/latest'))
         if release.get('draft') or release.get('prerelease'):raise ValueError('A stable BepInEx release is unavailable.')
@@ -80,7 +110,8 @@ def package(architecture):
         return f'https://github.com/{REPOSITORY}/releases/download/v{version}/BepInEx_win_{architecture}_{version}.zip',version,None
 
 
-def payload(archive, configuration_manager=False):
+def payload(archive, configuration_manager=False,runtime='mono'):
+    if runtime not in ('mono','il2cpp'):raise ValueError('Unsupported Unity runtime.')
     with ZipFile(archive) as bundle:
         entries=bundle.infolist()
         if len(entries)>2000 or sum(item.file_size for item in entries)>200*1024*1024:raise ValueError('BepInEx archive is too large.')
@@ -93,8 +124,9 @@ def payload(archive, configuration_manager=False):
             seen.add(key)
             if not item.is_dir():files[path.as_posix()]=bundle.read(item)
         required=('BepInEx/plugins/ConfigurationManager/ConfigurationManager.dll',) if configuration_manager else ('winhttp.dll','doorstop_config.ini','BepInEx/core/BepInEx.Preloader.dll')
+        if runtime=='il2cpp' and not configuration_manager:required=('winhttp.dll','doorstop_config.ini','BepInEx/core/BepInEx.Unity.IL2CPP.dll','BepInEx/core/BepInEx.Preloader.Core.dll','dotnet/Microsoft.NETCore.App.runtimeconfig.json')
         if configuration_manager and any(not name.startswith('BepInEx/plugins/ConfigurationManager/') for name in files):raise ValueError('Unexpected Configuration Manager archive contents.')
-        if not all(name in files for name in required):raise ValueError('This is not a Windows BepInEx 5 package.')
+        if not all(name in files for name in required):raise ValueError('This is not a Windows BepInEx '+('6 IL2CPP' if runtime=='il2cpp' else '5 Mono')+' package.')
         return files
 
 
@@ -149,16 +181,18 @@ def overrides(existing):
     return ';'.join([*parts,'winhttp=n,b'])
 
 
-def configuration_manager_package():
+def configuration_manager_package(runtime='mono'):
+    if runtime not in ('mono','il2cpp'):raise ValueError('Unsupported Unity runtime.')
     repository='BepInEx/BepInEx.ConfigurationManager'
+    backend='IL2CPP' if runtime=='il2cpp' else 'BepInEx5'
     try:
         release=json.loads(fetch(f'https://api.github.com/repos/{repository}/releases/latest'))
         if release.get('draft') or release.get('prerelease'):raise ValueError('A stable Configuration Manager release is unavailable.')
         tag=release['tag_name']
         if not re.fullmatch(r'v[0-9]+(?:\.[0-9]+)*',tag):raise ValueError('Invalid Configuration Manager release version.')
-        name=f'BepInEx.ConfigurationManager_BepInEx5_{tag}.zip'
+        name=f'BepInEx.ConfigurationManager_{backend}_{tag}.zip'
         asset=next((item for item in release['assets'] if item['name']==name),None)
-        if asset is None:raise ValueError('The BepInEx 5 Configuration Manager package is unavailable.')
+        if asset is None:raise ValueError('The '+backend+' Configuration Manager package is unavailable.')
         return asset['browser_download_url'],tag,asset.get('digest')
     except HTTPError as error:
         if error.code not in (403,429):raise
@@ -167,4 +201,4 @@ def configuration_manager_package():
         match=re.fullmatch(r'/BepInEx/BepInEx.ConfigurationManager/releases/tag/(v[0-9]+(?:\.[0-9]+)*)',path)
         if not match:raise ValueError('Could not resolve a stable Configuration Manager release.')
         tag=match[1]
-        return f'https://github.com/{repository}/releases/download/{tag}/BepInEx.ConfigurationManager_BepInEx5_{tag}.zip',tag,None
+        return f'https://github.com/{repository}/releases/download/{tag}/BepInEx.ConfigurationManager_{backend}_{tag}.zip',tag,None

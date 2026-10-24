@@ -1,4 +1,3 @@
-import copy
 from contextlib import contextmanager
 import json
 from pathlib import Path
@@ -40,7 +39,7 @@ class InstallationRecordTests(unittest.TestCase):
     def test_latest_metadata_is_used_and_removed_game_is_not_resurrected(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            old = {'Id': 'one', 'Name': 'Original'}
+            old = {'Id': 'one', 'Name': 'Original', 'LutrisId': '1'}
             latest = dict(old, Name='Renamed', Playtime=120)
             path = root / 'library.json'
             path.write_text(json.dumps([latest]))

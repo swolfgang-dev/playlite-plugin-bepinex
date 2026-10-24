@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 from zipfile import ZipFile
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from installer import detect,payload,Installation,overrides,package,executable_candidates,installation_defaults
+from installer import detect,runtime_kind,payload,Installation,overrides,package,executable_candidates,installation_defaults,configuration_manager_package
 
 
 def executable(machine=0x8664):
@@ -15,6 +15,83 @@ def executable(machine=0x8664):
 
 
 class InstallerTests(unittest.TestCase):
+    def test_il2cpp_detection_requires_matching_metadata_and_supports_both_architectures(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);exe=root/'game.exe'
+            (root/'GameAssembly.dll').touch()
+            metadata=root/'game_Data/il2cpp_data/Metadata';metadata.mkdir(parents=True)
+            (metadata/'global-metadata.dat').touch()
+            for machine,architecture in [(0x8664,'x64'),(0x14c,'x86')]:
+                exe.write_bytes(executable(machine))
+                self.assertEqual(detect(exe)[1],architecture)
+                self.assertEqual(runtime_kind(exe),'il2cpp')
+                self.assertEqual(executable_candidates(root),[str(exe)])
+            other=root/'other.exe';other.write_bytes(executable())
+            with self.assertRaisesRegex(ValueError,'metadata'):detect(other)
+
+    def test_il2cpp_package_uses_latest_matching_official_build(self):
+        page=''.join(f'<a href="{url}">download</a>' for url in [
+            '/projects/bepinex_be/788/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.788%2B5b766a3.zip',
+            '/projects/bepinex_be/789/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.789%2B6cea286.zip',
+            '/projects/bepinex_be/790/BepInEx-Unity.IL2CPP-win-x86-6.0.0-be.790%2B123abcd.zip',
+            'https://example.com/projects/bepinex_be/999/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.999%2B123abcd.zip'])
+        with patch('installer.fetch',return_value=page.encode()):
+            url,version,digest=package('x64','il2cpp')
+            self.assertTrue(url.startswith('https://builds.bepinex.dev/projects/bepinex_be/789/'))
+            self.assertEqual(version,'6.0.0-be.789+6cea286');self.assertIsNone(digest)
+        with patch('installer.fetch',return_value=b'<html>No builds</html>'):
+            with self.assertRaisesRegex(ValueError,'No official'):package('x64','il2cpp')
+
+    def test_il2cpp_payload_requires_matching_runtime(self):
+        archive=io.BytesIO()
+        names=('winhttp.dll','doorstop_config.ini','BepInEx/core/BepInEx.Unity.IL2CPP.dll',
+               'BepInEx/core/BepInEx.Preloader.Core.dll','dotnet/Microsoft.NETCore.App.runtimeconfig.json')
+        with ZipFile(archive,'w') as bundle:
+            for name in names:bundle.writestr(name,b'content')
+        archive.seek(0);self.assertEqual(set(payload(archive,runtime='il2cpp')),set(names))
+        archive.seek(0)
+        with self.assertRaises(ValueError):payload(archive)
+        archive.seek(0)
+        with self.assertRaisesRegex(ValueError,'Unexpected Configuration Manager'):payload(archive,configuration_manager=True,runtime='il2cpp')
+
+    def test_configuration_manager_selects_runtime_and_digest(self):
+        import json
+        release=dict(tag_name='v19.0',assets=[
+            dict(name='BepInEx.ConfigurationManager_BepInEx5_v19.0.zip',browser_download_url='mono-url',digest='sha256:mono'),
+            dict(name='BepInEx.ConfigurationManager_IL2CPP_v19.0.zip',browser_download_url='il2cpp-url',digest='sha256:il2cpp')])
+        with patch('installer.fetch',return_value=json.dumps(release).encode()):
+            self.assertEqual(configuration_manager_package(),('mono-url','v19.0','sha256:mono'))
+            self.assertEqual(configuration_manager_package('il2cpp'),('il2cpp-url','v19.0','sha256:il2cpp'))
+            with self.assertRaisesRegex(ValueError,'Unsupported Unity runtime'):configuration_manager_package('other')
+        release['assets'].pop()
+        with patch('installer.fetch',return_value=json.dumps(release).encode()):
+            with self.assertRaisesRegex(ValueError,'IL2CPP Configuration Manager package is unavailable'):configuration_manager_package('il2cpp')
+
+    def test_configuration_manager_rate_limit_fallback_keeps_runtime(self):
+        from urllib.error import HTTPError
+        from unittest.mock import MagicMock
+        response=MagicMock()
+        response.__enter__.return_value.geturl.return_value='https://github.com/BepInEx/BepInEx.ConfigurationManager/releases/tag/v19.0'
+        with patch('installer.fetch',side_effect=HTTPError('api',403,'Rate limited',{},None)),patch('installer.urllib.request.urlopen',return_value=response):
+            url,version,digest=configuration_manager_package('il2cpp')
+        self.assertTrue(url.endswith('/v19.0/BepInEx.ConfigurationManager_IL2CPP_v19.0.zip'))
+        self.assertEqual(version,'v19.0');self.assertIsNone(digest)
+
+    def test_configuration_manager_payload_accepts_plugins_only_for_both_runtimes(self):
+        for runtime in ('mono','il2cpp'):
+            for extra in (None,'BepInEx/core/unexpected.dll','../escape'):
+                with self.subTest(runtime=runtime,extra=extra):
+                    archive=io.BytesIO()
+                    with ZipFile(archive,'w') as bundle:
+                        bundle.writestr('BepInEx/plugins/ConfigurationManager/ConfigurationManager.dll',b'manager')
+                        bundle.writestr('BepInEx/plugins/ConfigurationManager/LICENSE',b'license')
+                        if extra:bundle.writestr(extra,b'bad')
+                    archive.seek(0)
+                    if extra:
+                        with self.assertRaises(ValueError):payload(archive,configuration_manager=True,runtime=runtime)
+                    else:
+                        self.assertEqual(len(payload(archive,configuration_manager=True,runtime=runtime)),2)
+
     def test_manager_protection_default_preserves_existing_config_and_rolls_back(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);name='BepInEx/config/BepInEx.cfg'

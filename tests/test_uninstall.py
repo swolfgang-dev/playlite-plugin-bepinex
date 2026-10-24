@@ -6,6 +6,20 @@ from uninstall import Removal
 
 
 class UninstallTests(unittest.TestCase):
+    def test_il2cpp_uninstall_removes_bundled_runtime_and_keeps_user_mods(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            files={'winhttp.dll':b'proxy','BepInEx/core/BepInEx.Unity.IL2CPP.dll':b'core',
+                   'dotnet/Microsoft.NETCore.App.runtimeconfig.json':b'runtime'}
+            for name,content in files.items():
+                path=root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(content)
+            mods=root/'BepInEx/plugins';mods.mkdir();(mods/'custom.dll').write_bytes(b'keep')
+            hashes={name:hashlib.sha256(content).hexdigest() for name,content in files.items()}
+            removal=Removal(root,hashes,True);removal.apply();removal.finish()
+            self.assertFalse((root/'dotnet').exists())
+            self.assertFalse((root/'winhttp.dll').exists())
+            self.assertEqual((mods/'custom.dll').read_bytes(),b'keep')
+
     def test_keep_user_data_and_rollback(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)

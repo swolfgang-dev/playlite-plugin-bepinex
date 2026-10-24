@@ -2,16 +2,27 @@ import hashlib
 from pathlib import Path
 import tempfile
 from PyQt6.QtCore import QThreadPool
-from playlite.tasks import Task
+try:
+    from playlite.tasks import Task
+except ModuleNotFoundError as error:
+    if error.name != 'playlite.tasks':raise
+    from playlite.metadata_dialog import Task
 from PyQt6.QtWidgets import QApplication,QWidget,QDialog,QVBoxLayout,QLabel,QComboBox,QPushButton,QHBoxLayout,QCheckBox,QLineEdit,QLayout,QSizePolicy
 from playlite.play_actions import actions_for
-from .installer import detect,package,fetch,payload,Installation,overrides,configuration_manager_package,executable_candidates,installation_defaults
+from .installer import detect,runtime_kind,package,fetch,payload,Installation,overrides,configuration_manager_package,executable_candidates,installation_defaults
 from .steam_setup import LAUNCH_OPTIONS,steam_apps,open_properties
 
 
 class Job(Task):
     def __init__(self,operation):
         super().__init__(lambda: operation(self.progress))
+
+    def progress(self,message):
+        from PyQt6 import sip
+        if not sip.isdeleted(self.signals):
+            try:self.signals.progress.emit(message)
+            except RuntimeError:
+                if not sip.isdeleted(self.signals):raise
 
 
 class InstallDialog(QDialog):
@@ -23,7 +34,7 @@ class InstallDialog(QDialog):
         layout.setContentsMargins(20,20,20,20)
         layout.setSpacing(12)
         layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
-        explanation=QLabel('Install stable BepInEx 5 beside the game executable. Optionally copy an existing Lutris entry to “[Game] - Modded” and add the BepInEx DLL override to the copy. Existing game files will never be overwritten.')
+        explanation=QLabel('Install BepInEx beside the game executable: stable BepInEx 5 for Unity Mono, or BepInEx 6 bleeding-edge for Unity IL2CPP. Optionally copy an existing Lutris entry to “[Game] - Modded” with the required DLL override. Existing game files will never be overwritten.')
         explanation.setWordWrap(True);layout.addWidget(explanation)
         self.source=QComboBox()
         available=lutris and all(callable(getattr(lutris,name,None)) for name in ('create_variant','launch_configuration'))
@@ -35,7 +46,7 @@ class InstallDialog(QDialog):
                 configuration=lutris.launch_configuration(item['LutrisId'])
                 if str(configuration.get('playlite_variant','')).endswith(':BepInEx'):continue
             except (ValueError,OSError):continue
-            self.source.addItem(f'{item["Name"]} — {architecture}',item)
+            self.source.addItem(f'{item["Name"]} — {runtime_kind(executable).upper()} {architecture}',item)
         self.add_lutris=QCheckBox('Add Lutris integration (copy the existing entry)')
         self.add_lutris.setEnabled(bool(self.source.count()))
         self.add_lutris.setChecked(bool(self.source.count()))
@@ -48,7 +59,7 @@ class InstallDialog(QDialog):
         if len(candidates)==1:executable=candidates[0]
         self.executable=QLineEdit(executable)
         self.executable_choices=QComboBox()
-        self.executable_choices.addItem('Choose a detected Unity Mono executable…','')
+        self.executable_choices.addItem('Choose a detected Unity executable…','')
         for candidate in candidates:self.executable_choices.addItem(candidate,candidate)
         self.executable_choices.currentIndexChanged.connect(lambda *_:self.executable.setText(self.executable_choices.currentData() or ''))
         self.executable_choices.setVisible(len(candidates)>1);layout.addWidget(self.executable_choices)
@@ -57,6 +68,7 @@ class InstallDialog(QDialog):
         self.add_lutris.toggled.connect(self.update_controls)
         self.configuration_manager=QCheckBox('Include Configuration Manager (in-game settings, F1)')
         self.configuration_manager.setChecked(True);layout.addWidget(self.configuration_manager)
+        self.runtime_status=QLabel();self.runtime_status.setWordWrap(True);layout.addWidget(self.runtime_status)
         self.steam_setup=QWidget();steam_layout=QVBoxLayout(self.steam_setup)
         steam_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         self.steam_setup.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Minimum)
@@ -84,6 +96,8 @@ class InstallDialog(QDialog):
         self.install_button=QPushButton('Install');self.install_button.setProperty('primary',True);self.install_button.clicked.connect(self.start)
         self.close_button=QPushButton('Close');self.close_button.clicked.connect(self.reject)
         footer.addWidget(self.install_button);footer.addWidget(self.close_button);layout.addLayout(footer)
+        self.executable.textChanged.connect(self.update_runtime)
+        self.source.currentIndexChanged.connect(self.update_runtime)
         self.update_controls()
         from playlite.ui_layout import scroll_dialog_body
         self.body_scroll=scroll_dialog_body(self,footer)
@@ -110,6 +124,22 @@ class InstallDialog(QDialog):
         self.browse_button.setEnabled(not integrated and self.job is None)
         self.executable_choices.setEnabled(not integrated and self.job is None)
         self.steam_setup.setVisible(not integrated and bool(self.steam_game.count()))
+        self.update_runtime()
+
+    def update_runtime(self,*_):
+        source=self.source.currentData() if self.add_lutris.isChecked() else {'Executable':self.executable.text().strip()}
+        runtime=None
+        try:
+            executable,architecture=detect((source or {}).get('Executable') or '')
+            runtime=runtime_kind(executable)
+            message=('Unity IL2CPP '+architecture+' · BepInEx 6 bleeding-edge. First launch may take longer while interop files are generated. Configuration Manager requires the game’s Unity IMGUI support; some games need additional patches.'
+                     if runtime=='il2cpp' else 'Unity Mono '+architecture+' · stable BepInEx 5.')
+        except (ValueError,OSError) as error:
+            message=str(error) if (source or {}).get('Executable') else 'Choose a Unity game executable to detect its runtime.'
+        self.runtime_status.setText(message)
+        self.configuration_manager.setEnabled(self.job is None)
+        self.configuration_manager.setToolTip('Installs the official IL2CPP Configuration Manager for BepInEx 6.' if runtime=='il2cpp' else 'Installs the official Configuration Manager for BepInEx 5 Mono.')
+        if not self.source.count():self.add_lutris.setToolTip(message)
 
     def copy_steam_options(self):
         QApplication.clipboard().setText(LAUNCH_OPTIONS)
@@ -149,31 +179,32 @@ class InstallDialog(QDialog):
         self.configuration_manager.setEnabled(False)
         def operation(progress):
             executable,architecture=detect(source['Executable'])
+            runtime=runtime_kind(executable)
             configuration=self.lutris.launch_configuration(source['LutrisId']) if integrated else {}
             if integrated and Path(configuration['game']['exe']).resolve()!=executable:raise ValueError('The source executable changed. Reopen this installer.')
-            progress('Finding the stable BepInEx release…')
-            url,version,expected=package(architecture)
+            progress('Finding an official BepInEx 6 IL2CPP bleeding-edge build…' if runtime=='il2cpp' else 'Finding the stable BepInEx release…')
+            url,version,expected=package(architecture,'il2cpp') if runtime=='il2cpp' else package(architecture)
             progress('Downloading BepInEx '+version+'…');archive=fetch(url)
             digest=hashlib.sha256(archive).hexdigest()
             if expected and expected!='sha256:'+digest:raise ValueError('BepInEx package checksum mismatch.')
             with tempfile.TemporaryDirectory(prefix='playlite-bepinex-') as temporary:
                 path=Path(temporary)/'package.zip';path.write_bytes(archive)
-                files=payload(path)
+                files=payload(path,runtime='il2cpp') if runtime=='il2cpp' else payload(path)
             if include_manager:
-                progress('Finding Configuration Manager for BepInEx 5…')
-                manager_url,manager_version,manager_digest=configuration_manager_package()
+                progress('Finding Configuration Manager for '+('BepInEx 6 IL2CPP…' if runtime=='il2cpp' else 'BepInEx 5 Mono…'))
+                manager_url,manager_version,manager_digest=configuration_manager_package(runtime)
                 progress('Downloading Configuration Manager '+manager_version+'…')
                 manager_archive=fetch(manager_url)
                 if manager_digest and manager_digest!='sha256:'+hashlib.sha256(manager_archive).hexdigest():raise ValueError('Configuration Manager checksum mismatch.')
                 with tempfile.TemporaryDirectory(prefix='playlite-bepinex-manager-') as temporary:
                     path=Path(temporary)/'manager.zip';path.write_bytes(manager_archive)
-                    files.update(payload(path,configuration_manager=True))
-            files=installation_defaults(executable.parent,files)
+                    files.update(payload(path,configuration_manager=True,runtime=runtime))
+            if runtime=='mono':files=installation_defaults(executable.parent,files)
             install=Installation(executable.parent,files)
             progress('Installing BepInEx beside the game executable…');install.apply()
             from .installation_record import commit_installation
             environment=configuration.get('system',{}).get('env',{}) or {}
-            result=dict(version=version,sha256=digest,executable=str(executable),
+            result=dict(version=version,runtime=runtime,sha256=digest,executable=str(executable),
                 source=source,integrated=integrated,
                 files={name:hashlib.sha256(content).hexdigest() for name,content in files.items()})
             return commit_installation(self.window.data,self.game,list(self.window.game_providers),

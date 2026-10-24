@@ -57,7 +57,12 @@ class Removal:
         if self.backup:
             shutil.rmtree(self.backup)
             self.backup = None
-        for directory in sorted((self.root / 'BepInEx').rglob('*'), key=lambda p: len(p.parts), reverse=True):
-            if directory.is_dir() and not directory.is_symlink():
-                try: directory.rmdir()
-                except OSError: pass
+        roots=[self.root/'BepInEx']
+        if any(name.startswith('dotnet/') for name in self.hashes):roots.append(self.root/'dotnet')
+        for root in roots:
+            for directory in sorted(root.rglob('*'), key=lambda p: len(p.parts), reverse=True):
+                if directory.is_dir() and not directory.is_symlink():
+                    try: directory.rmdir()
+                    except OSError: pass
+            try:root.rmdir()
+            except OSError:pass
